@@ -1,0 +1,1008 @@
+<title>The NAS-T-BOX Story</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800;900&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one 1920x1080 film frame scaled to fit the window, with a printer-LCD style transport bar under it. */
+:root{
+  color-scheme: dark;
+  --ink:#0b0a08;        /* warm near-black: the case interior */
+  --panel:#161411;      /* raised surfaces */
+  --line:#2e2a24;       /* hairlines */
+  --paper:#efe9dc;      /* warm white: PLA */
+  --mute:#9b9285;       /* secondary text */
+  --gold:#cdb67e;       /* the V100 shroud */
+  --gold-hi:#ecd9a8;
+  --air:#62cbe2;        /* cool intake air */
+  --hot:#ff6a3c;        /* heat */
+  --ok:#86d392;
+  --disp:"Big Shoulders Display","Arial Narrow","Haettenschweiler",Impact,sans-serif;
+  --sans:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+html,body{height:100%}
+body{background:var(--ink);color:var(--paper);font-family:var(--sans);overflow:hidden;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible,.bar:focus-visible{outline:2px solid var(--gold-hi);outline-offset:3px}
+
+.player{height:100%;display:flex;flex-direction:column;gap:10px;padding-block:12px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.frame{flex:1;min-height:0;position:relative;overflow:hidden;border-radius:6px;background:#000}
+.stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%) scale(var(--s,.5));
+  transform-origin:center;overflow:hidden;background:var(--ink)}
+
+/* ---------- transport ---------- */
+.deck{display:flex;align-items:center;gap:14px;font-family:var(--mono);font-size:12px;color:var(--mute);min-width:0}
+.deck .btn{height:34px;min-width:34px;padding:0 10px;border:1px solid var(--line);border-radius:6px;color:var(--paper);
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--panel)}
+.deck .btn:hover{border-color:var(--gold)}
+.deck .btn[aria-pressed="false"]{color:var(--mute)}
+.deck .btn svg{width:14px;height:14px;fill:currentColor}
+.bar{flex:1;min-width:0;height:34px;position:relative;cursor:pointer;display:flex;align-items:center}
+.bar .track{position:absolute;left:0;right:0;height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+.bar .fill{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--gold)}
+.bar .tick{position:absolute;top:8px;width:1px;height:18px;background:var(--mute);opacity:.55}
+.bar .tick span{position:absolute;top:19px;left:4px;white-space:nowrap;font-size:10px;letter-spacing:.08em;color:var(--mute)}
+.lcd{white-space:nowrap;font-variant-numeric:tabular-nums}
+.lcd b{color:var(--paper);font-weight:500}
+@media (max-width:760px){ .bar .tick span{display:none} .lcd .long{display:none} .deck{gap:8px} }
+
+/* ---------- captions ---------- */
+.cap{position:absolute;left:50%;bottom:4.2%;transform:translateX(-50%);width:min(86%,1500px);text-align:center;pointer-events:none;
+  font-family:var(--sans);font-weight:500;font-size:clamp(13px,2.05vw,34px);line-height:1.3;color:#fff;text-wrap:balance;
+  text-shadow:0 2px 3px rgba(0,0,0,.9),0 0 22px rgba(0,0,0,.85);transition:opacity .25s;opacity:0;z-index:5}
+.cap.show{opacity:1}
+.cap span{background:rgba(8,7,6,.62);padding:.12em .5em;border-radius:.2em;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.nocap .cap{display:none}
+@media (max-aspect-ratio:1/1){ .cap{position:static;transform:none;width:auto;min-height:4.2em;font-size:16px;opacity:1} .cap span{background:none;padding:0} .frame{flex:0 0 auto;height:calc((100vw - 32px)*9/16)} .player{justify-content:center} }
+
+/* ---------- scenes ---------- */
+.scene{position:absolute;inset:0;opacity:0;visibility:hidden;transition:opacity .7s ease,visibility 0s .7s;overflow:hidden}
+.scene.active{opacity:1;visibility:visible;transition:opacity .7s ease,visibility 0s}
+.scene.cut{transition:none}
+.vo{display:none}
+
+/* things that enter on cue */
+.fx{opacity:0;transition:opacity .6s ease,transform .9s cubic-bezier(.2,.8,.2,1),clip-path .9s cubic-bezier(.2,.8,.2,1),filter .9s}
+.fx.up{transform:translateY(46px)} .fx.down{transform:translateY(-46px)} .fx.left{transform:translateX(-70px)} .fx.right{transform:translateX(70px)}
+.fx.zoom{transform:scale(.9)} .fx.big{transform:scale(1.35)} .fx.blur{filter:blur(18px)}
+.fx.wipe{clip-path:inset(0 100% 0 0);opacity:1} .fx.wipe.on{clip-path:inset(0 0 0 0)}
+.fx.drop{transform:translateY(-90px) rotate(calc(var(--r,0deg) * -2)) scale(1.18)}
+.fx.on{opacity:1;transform:none;filter:none}
+.fx.drop.on{transform:rotate(var(--r,0deg))}
+.fx.gone{opacity:0!important}
+
+/* photographs */
+.ph{position:absolute;overflow:hidden;background:#000}
+.ph img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;max-width:none}
+.ph.full{inset:0}
+.scene.active .kb{animation:kb var(--kbd,14s) linear both}
+.paused .scene.active .kb{animation-play-state:paused}
+@keyframes kb{from{transform:scale(var(--z0,1.04)) translate(var(--x0,0),var(--y0,0))}to{transform:scale(var(--z1,1.16)) translate(var(--x1,0),var(--y1,0))}}
+.scrim{position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(11,10,8,.55) 0,rgba(11,10,8,0) 22%,rgba(11,10,8,0) 58%,rgba(11,10,8,.88) 100%)}
+.scrim.heavy{background:rgba(11,10,8,.72)}
+.scrim.side{background:linear-gradient(90deg,rgba(11,10,8,.94) 0,rgba(11,10,8,.82) 38%,rgba(11,10,8,0) 72%)}
+.scrim.rside{background:linear-gradient(270deg,rgba(11,10,8,.94) 0,rgba(11,10,8,.82) 38%,rgba(11,10,8,0) 72%)}
+
+/* a printed photo lying on the bench */
+.print{position:absolute;background:var(--paper);padding:12px 12px 44px;box-shadow:0 18px 50px rgba(0,0,0,.6),0 2px 6px rgba(0,0,0,.5)}
+.print img{display:block;width:100%;height:100%;object-fit:cover}
+.print i{position:absolute;left:14px;right:14px;bottom:11px;font:500 17px/1.2 var(--mono);color:#3a342b;font-style:normal;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.print.bare{padding:0;background:none}.print.bare i{display:none}
+.bench{position:absolute;inset:0;background:radial-gradient(1200px 700px at 50% 40%,#2a241c 0,#14110d 70%,#0b0a08 100%)}
+.bench::after{content:"";position:absolute;inset:0;opacity:.5;background:repeating-linear-gradient(90deg,rgba(255,255,255,.018) 0 2px,transparent 2px 7px)}
+
+/* type */
+.stamp{position:absolute;left:64px;top:52px;font:500 20px/1 var(--mono);letter-spacing:.14em;color:var(--gold);text-transform:uppercase;z-index:3}
+.stamp b{color:var(--paper);font-weight:500}
+.date{position:absolute;right:64px;top:52px;font:500 20px/1 var(--mono);letter-spacing:.1em;color:var(--paper);opacity:.85;z-index:3}
+h1,h2,h3,p{margin:0}
+.h-xl{font:900 230px/.86 var(--disp);letter-spacing:-.01em;text-transform:uppercase}
+.h-l{font:900 150px/.9 var(--disp);text-transform:uppercase}
+.h-m{font:800 92px/.95 var(--disp);text-transform:uppercase}
+.h-s{font:800 58px/1 var(--disp);text-transform:uppercase;letter-spacing:.01em}
+.gold{color:var(--gold)} .air{color:var(--air)} .hot{color:var(--hot)} .ok{color:var(--ok)} .mute{color:var(--mute)}
+.lede{font:400 38px/1.3 var(--sans);color:var(--paper);text-wrap:balance}
+.mono{font-family:var(--mono)}
+.tag{display:inline-block;font:500 20px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink);background:var(--gold);padding:8px 12px}
+.quote{font:500 44px/1.25 var(--sans);color:#fff;text-wrap:balance}
+.quote::before{content:"\201C"} .quote::after{content:"\201D"}
+.abs{position:absolute}
+
+/* act cards */
+.act{display:flex;flex-direction:column;justify-content:center;padding:0 150px;background:var(--ink)}
+.act .no{font:500 26px/1 var(--mono);letter-spacing:.2em;color:var(--gold);margin-bottom:26px}
+.act .sub{margin-top:30px;font:400 40px/1.3 var(--sans);color:var(--mute);max-width:1200px}
+.act .layers{position:absolute;right:0;top:0;bottom:0;width:46%;opacity:.5;
+  background:repeating-linear-gradient(0deg,transparent 0 11px,rgba(205,182,126,.16) 11px 12px);
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000);mask-image:linear-gradient(90deg,transparent,#000)}
+.scene.active .act-rule{animation:grow 1.4s .2s cubic-bezier(.2,.8,.2,1) both}
+.act-rule{height:6px;width:420px;background:var(--gold);transform-origin:left;margin:34px 0 0}
+@keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+
+/* generic panels */
+.card{position:absolute;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:10px 28px;font:400 30px/1.25 var(--sans)}
+.kv dt{font:500 22px/1.5 var(--mono);letter-spacing:.1em;color:var(--gold);text-transform:uppercase}
+.kv dd{margin:0}
+.num{font:900 1em/.9 var(--disp);font-variant-numeric:tabular-nums}
+
+/* poster */
+.poster{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;justify-content:flex-end;padding:0 110px 96px;transition:opacity .8s,visibility 0s .8s}
+.poster.hide{opacity:0;visibility:hidden;pointer-events:none}
+.poster .bg{position:absolute;inset:0}
+.poster .bg img{width:100%;height:100%;object-fit:cover;max-width:none}
+.poster .bg::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(11,10,8,.25) 0,rgba(11,10,8,.2) 35%,rgba(11,10,8,.96) 100%)}
+.poster>*:not(.bg){position:relative}
+.poster .kicker{font:500 24px/1 var(--mono);letter-spacing:.2em;color:var(--gold);text-transform:uppercase;margin-bottom:22px}
+.poster h1{font:900 250px/.82 var(--disp);letter-spacing:-.012em;text-transform:uppercase}
+.poster .row{display:flex;align-items:flex-end;gap:60px;margin-top:34px}
+.poster .lede{max-width:980px}
+.play{margin-left:auto;display:inline-flex;align-items:center;gap:22px;height:104px;padding:0 44px 0 34px;background:var(--gold);color:var(--ink);
+  font:800 50px/1 var(--disp);letter-spacing:.03em;text-transform:uppercase;border-radius:6px;white-space:nowrap}
+.play:hover{background:var(--gold-hi)}
+.play svg{width:40px;height:40px;fill:currentColor}
+.play small{font:500 20px/1 var(--mono);letter-spacing:.1em;opacity:.75}
+
+@media (prefers-reduced-motion:reduce){ .scene.active .kb{animation:none} .fx{transition-duration:.01s} }
+
+/* ---------- scene-specific pieces ---------- */
+.blurbg{position:absolute;inset:-60px;background-size:cover;background-position:center;filter:blur(38px) brightness(.42) saturate(1.1)}
+
+/* opening: the videos that started it */
+.vid{position:absolute;width:520px;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.55)}
+.vid .th{height:292px;display:flex;align-items:center;justify-content:center;position:relative;background:linear-gradient(135deg,#2a2419,#14110d)}
+.vid .th b{font:900 74px/.9 var(--disp);text-transform:uppercase;text-align:center;color:var(--paper);padding:0 30px}
+.vid .th em{position:absolute;right:14px;bottom:12px;font:500 18px/1 var(--mono);font-style:normal;background:rgba(0,0,0,.75);padding:5px 7px;border-radius:4px}
+.vid .th::before{content:"";position:absolute;left:18px;top:16px;border-left:22px solid var(--gold);border-top:13px solid transparent;border-bottom:13px solid transparent}
+.vid .ln{padding:18px 20px 20px;display:grid;gap:10px}
+.vid .ln span{height:12px;border-radius:6px;background:#2f2a22}.vid .ln span+span{width:58%}
+
+/* the listing + the chat */
+.listing{position:absolute;width:600px;background:#111;border-radius:22px;overflow:hidden;border:1px solid #2a2a2a;box-shadow:0 30px 80px rgba(0,0,0,.7)}
+.listing img{display:block;width:100%;height:334px;object-fit:cover}
+.listing .in{padding:24px 28px 30px;font-family:var(--sans)}
+.listing h3{font:600 34px/1.2 var(--sans)}
+.listing .pr{margin-top:10px;font:600 40px/1 var(--sans)}.listing .pr small{font:500 22px/1 var(--sans);color:#3ad29f;margin-left:12px}
+.listing p{margin-top:16px;font:400 25px/1.4 var(--sans);color:#d7d2c8}
+.bub{position:absolute;max-width:640px;padding:20px 28px;border-radius:28px;font:400 31px/1.3 var(--sans)}
+.bub.me{background:#12b886;color:#fff;border-bottom-right-radius:8px}
+.bub.him{background:#2a2a2d;color:#eee;border-bottom-left-radius:8px}
+.slam{position:absolute;font:900 330px/.8 var(--disp);color:var(--gold-hi);text-shadow:0 10px 50px rgba(0,0,0,.8);transform:rotate(-7deg) scale(2.2);opacity:0;transition:transform .32s cubic-bezier(.3,1.5,.5,1),opacity .15s}
+.slam.on{opacity:1;transform:rotate(-7deg) scale(1)}
+
+/* spec tiles */
+.tile{position:absolute;width:540px;height:300px;border-radius:10px;overflow:hidden;background:#000;border:1px solid var(--line)}
+.tile img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;max-width:none;opacity:.78}
+.tile .lb{position:absolute;left:0;right:0;bottom:0;padding:56px 22px 18px;background:linear-gradient(180deg,transparent,rgba(8,7,6,.95))}
+.tile .lb small{display:block;font:500 17px/1 var(--mono);letter-spacing:.14em;color:var(--gold);text-transform:uppercase;margin-bottom:8px}
+.tile .lb b{font:800 44px/1 var(--disp);text-transform:uppercase;letter-spacing:.01em}
+
+/* check / cross lists */
+.list{position:absolute;display:grid;gap:22px;font:500 44px/1.15 var(--sans)}
+.list li{list-style:none;display:flex;align-items:baseline;gap:22px}
+.list li::before{content:"\00D7";font:900 54px/1 var(--disp);color:var(--hot);width:36px}
+.list.ok li::before{content:"\2192";color:var(--gold)}
+ul.list{margin:0;padding:0}
+
+/* name reveal */
+.nm{position:absolute;left:150px;right:150px;display:grid;grid-template-columns:300px 1fr;align-items:baseline;gap:40px;border-top:1px solid var(--line);padding-top:22px}
+.nm b{font:900 120px/.9 var(--disp);color:var(--gold)}.nm span{font:400 46px/1.2 var(--sans)}
+
+/* pipeline */
+.pipe{position:absolute;display:flex;flex-direction:column;gap:14px}
+.pipe div{display:flex;align-items:center;gap:22px;font:500 34px/1.2 var(--sans);padding:16px 24px;background:rgba(22,20,17,.88);border:1px solid var(--line);border-left:6px solid var(--gold);border-radius:6px;width:760px}
+.pipe div small{font:500 20px/1 var(--mono);color:var(--gold);letter-spacing:.1em;min-width:44px}
+.pipe div em{font-style:normal;color:var(--mute);font-size:26px;margin-left:auto;font-family:var(--mono)}
+
+/* CAD viewport */
+.vp{position:absolute;background:#c6c6c6;border-radius:8px;overflow:hidden;box-shadow:0 26px 70px rgba(0,0,0,.6);border:1px solid #000}
+.vp .bar2{position:absolute;left:0;right:0;top:0;height:44px;background:#1b1916;color:var(--mute);font:500 18px/44px var(--mono);padding:0 16px;letter-spacing:.04em;z-index:2;white-space:nowrap}
+.vp .bar2 b{color:var(--gold);font-weight:500}
+.vp img{position:absolute;left:0;top:44px;width:100%;height:calc(100% - 44px);object-fit:cover;max-width:none}
+.vp img.fx{transition:opacity .45s}
+.vnum{position:absolute;font:900 360px/.8 var(--disp);color:var(--gold);letter-spacing:-.02em}
+.vnum small{font-size:.42em;color:var(--mute);margin-right:.04em}
+.vnote{position:absolute;font:500 40px/1.25 var(--sans);text-wrap:balance}
+.vnote small{display:block;font:500 20px/1 var(--mono);letter-spacing:.14em;color:var(--gold);text-transform:uppercase;margin-bottom:14px}
+.dots{position:absolute;display:flex;gap:10px}
+.dots i{width:54px;height:8px;background:var(--line);border-radius:2px;transition:background .3s}
+.dots i.on{background:var(--gold)}
+
+/* phones */
+.phone{position:absolute;border-radius:40px;border:11px solid #0a0a0b;outline:2px solid #2c2c30;overflow:hidden;background:#000;box-shadow:0 30px 80px rgba(0,0,0,.7)}
+.phone img{display:block;width:100%;height:100%;object-fit:cover;object-position:top;max-width:none}
+.shot{position:absolute;border-radius:10px;overflow:hidden;border:1px solid #2c2c30;box-shadow:0 30px 80px rgba(0,0,0,.7);background:#0e1117}
+.shot img{display:block;width:100%;height:100%;object-fit:cover;object-position:top left;max-width:none}
+
+/* before / after numbers */
+.ba{position:absolute;left:150px;right:150px;display:grid;grid-template-columns:330px 1fr 150px 1fr;align-items:center;gap:0 30px;padding:26px 0;border-top:1px solid var(--line)}
+.ba .k{font:500 22px/1.3 var(--mono);letter-spacing:.12em;color:var(--mute);text-transform:uppercase}
+.ba .v{font:900 150px/.85 var(--disp);font-variant-numeric:tabular-nums}
+.ba .v small{font:600 46px/1 var(--disp);color:var(--mute);margin-left:10px}
+.ba .ar{font:900 90px/1 var(--disp);color:var(--mute);text-align:center}
+.ba .v.b{color:var(--hot)}.ba .v.a{color:var(--air)}
+.bahead{position:absolute;left:150px;right:150px;display:grid;grid-template-columns:330px 1fr 150px 1fr;gap:0 30px;font:500 22px/1.3 var(--mono);letter-spacing:.14em;text-transform:uppercase}
+
+/* speed bars */
+.bars{position:absolute;left:150px;right:150px;display:grid;gap:18px}
+.bars .r{display:grid;grid-template-columns:520px 1fr 170px;align-items:center;gap:26px}
+.bars .n{font:500 30px/1.1 var(--sans)}.bars .n small{display:block;font:400 19px/1.3 var(--mono);color:var(--mute);margin-top:4px}
+.bars .t{height:44px;background:#1a1815;border-radius:3px;overflow:hidden}
+.bars .t i{display:block;height:100%;width:0;background:var(--gold);transition:width 1.3s cubic-bezier(.2,.8,.2,1)}
+.bars .r.on .t i{width:var(--w)}
+.bars .r.top .t i{background:linear-gradient(90deg,var(--gold),var(--gold-hi))}
+.bars .q{font:900 62px/.9 var(--disp);font-variant-numeric:tabular-nums;text-align:right}
+.bars .q small{font:500 18px/1 var(--mono);color:var(--mute);margin-left:6px}
+.bars .r{opacity:0;transition:opacity .5s}.bars .r.on{opacity:1}
+
+/* what it does */
+.use{position:absolute;width:392px;height:232px;padding:22px 24px;background:rgba(22,20,17,.92);border:1px solid var(--line);border-top:5px solid var(--gold);border-radius:8px}
+.use small{font:500 18px/1 var(--mono);letter-spacing:.14em;color:var(--gold)}
+.use b{display:block;margin-top:12px;font:800 44px/1 var(--disp);text-transform:uppercase}
+.use p{margin-top:12px;font:400 23px/1.3 var(--sans);color:#cfc8ba}
+.use p strong{color:#fff;font-weight:600}
+
+/* next */
+.nx{position:absolute;left:150px;right:150px;display:grid;gap:0}
+.nx div{display:grid;grid-template-columns:1fr auto;align-items:baseline;gap:30px;padding:19px 0;border-top:1px solid var(--line);font:500 40px/1.2 var(--sans)}
+.nx div em{font:500 20px/1 var(--mono);font-style:normal;letter-spacing:.12em;text-transform:uppercase;color:var(--gold)}
+.nx div.maybe{color:var(--gold-hi)}
+
+/* 3D */
+#s-explode canvas{position:absolute;inset:0;width:1920px;height:1080px}
+#s-explode .fallback{display:none}
+#s-explode.no3d canvas{display:none}#s-explode.no3d .fallback{display:block}
+.lab3d{position:absolute;transform:translate(-50%,-100%);font:500 22px/1.2 var(--mono);letter-spacing:.06em;color:var(--paper);text-align:center;white-space:nowrap;opacity:0;padding-bottom:26px}
+.lab3d::after{content:"";position:absolute;left:50%;bottom:0;width:1px;height:20px;background:var(--gold)}
+.lab3d small{display:block;color:var(--gold);font-size:17px;letter-spacing:.12em;text-transform:uppercase;margin-top:3px}
+#s-explode.no3d .lab3d{display:none}
+
+.chip{position:absolute;font:800 62px/1 var(--disp);text-transform:uppercase;background:rgba(11,10,8,.82);border:1px solid var(--gold);color:var(--gold-hi);padding:14px 22px;border-radius:6px;white-space:nowrap}
+.strike{position:relative;display:inline-block}
+.strike::after{content:"";position:absolute;left:-2%;top:52%;height:10px;width:0;background:var(--paper);transition:width .5s}
+.strike.on::after{width:104%}
+.credits{position:absolute;left:150px;right:150px;display:flex;gap:60px;font:500 22px/1.5 var(--mono);letter-spacing:.08em;color:var(--mute);text-transform:uppercase}
+.credits b{color:var(--paper);font-weight:500;display:block}
+
+/* act cards: photo on the right */
+.act .actph{position:absolute;right:0;top:0;bottom:0;width:44%;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 55%);mask-image:linear-gradient(90deg,transparent,#000 55%);opacity:.8}
+.act .actph img{width:100%;height:100%;object-fit:cover;max-width:none}
+.act .layers{z-index:1}
+.act>.no,.act>h2,.act>.act-rule,.act>.sub{position:relative;z-index:2}
+/* closing wall of photos */
+.wall{position:absolute;inset:0;display:grid;grid-template-columns:repeat(9,1fr);grid-auto-rows:270px;gap:0}
+.wall img{width:100%;height:100%;object-fit:cover;max-width:none;display:block}
+.credits{display:grid;grid-template-columns:repeat(3,1fr)}
+.lab3d.below{transform:translate(-50%,0);padding:26px 0 0}
+.lab3d.below::after{bottom:auto;top:0}
+.stamp,.date{text-shadow:0 1px 3px rgba(0,0,0,.9),0 0 14px rgba(0,0,0,.7)}
+
+</style>
+<div class="player paused">
+ <div class="frame">
+  <div class="stage">
+
+<!-- ======================= ACT 1 · THE FIND ======================= -->
+<section class="scene" id="s-idea" data-dur="11" data-act="THE FIND" data-mx="0.8">
+  <div class="bench"></div>
+  <div class="stamp">; act 01 · <b>the find</b></div>
+  <div class="vid fx drop" data-at="0.9" style="left:150px;top:250px;--r:-4deg"><div class="th"><b>Home NAS build</b><em>24:13</em></div><div class="ln"><span></span><span></span></div></div>
+  <div class="vid fx drop" data-at="5.4" style="left:700px;top:200px;--r:2deg"><div class="th"><b>Homelab tour</b><em>31:40</em></div><div class="ln"><span></span><span></span></div></div>
+  <div class="vid fx drop" data-at="7.0" style="left:1250px;top:270px;--r:5deg"><div class="th"><b>Local AI on old server GPUs</b><em>18:02</em></div><div class="ln"><span></span><span></span></div></div>
+  <p class="vo" data-at="0.4">So this whole thing started the way all my bad ideas start. YouTube.</p>
+  <p class="vo" data-at="5.4">Homelab tours. NAS builds. Dudes running local AI on old server cards.</p>
+</section>
+
+<section class="scene" id="s-find" data-dur="16" data-act="THE FIND" data-mx="1">
+  <div class="bench"></div>
+  <div class="stamp">; act 01 · <b>the find</b></div><div class="date">OCT 25 · 10:58 PM</div>
+  <div class="print fx drop" data-at="0.3" data-gone="3.4" style="left:200px;top:210px;width:780px;height:630px;--r:-3deg"><img src="img/drives.jpg" alt="Five hard drives on a table"><i>four 4 TB drives, doing nothing</i></div>
+  <div class="listing fx left" data-at="3.3" style="left:150px;top:150px">
+    <img src="img/listing.jpg" alt="Listing photo: a PC with cables hanging out">
+    <div class="in"><h3>Parting out old pc</h3><div class="pr">Free <small>Make offer</small></div>
+    <p>i9-9900k 32gb of ddr ram, 2070 super 1tb ssd Samsung 970 evo plus. 2 tb hdd lmk what you want</p></div>
+  </div>
+  <p class="quote abs fx up" data-at="5" data-off="8.2" style="left:860px;top:300px;width:900px;font-size:60px">Bro I may have just hit the f***ing jackpot. Literally the first thing I see on offer up.</p>
+  <div class="bub me fx up" data-at="8.3" data-gone="13" style="right:150px;top:170px">I'll take all of it. How much do you want for it?</div>
+  <div class="bub him fx up" data-at="9.6" data-gone="13" style="left:860px;top:330px">You sure? It really needs some work… And I also sold the gpu</div>
+  <div class="bub me fx up" data-at="10.8" data-gone="13" style="right:150px;top:520px">For sure, I love fixing these hah.</div>
+  <div class="bub him fx up" data-at="11.7" style="left:860px;top:650px">200 sounds good?</div>
+  <div class="slam" data-at="13.1" style="left:1010px;top:250px">$200</div>
+  <p class="vo" data-at="0.4">I had four 4-terabyte drives collecting dust. So I open OfferUp. Literally the first thing I see: parting out old PC.</p>
+  <p class="vo" data-at="8.3">I said, I'll take all of it. He goes: two hundred sound good?</p>
+  <p class="vo" data-at="13.2">Bro. Deal of the century.</p>
+</section>
+
+<section class="scene" id="s-specs" data-dur="11.5" data-act="THE FIND" data-mx="1.6">
+  <div class="bench"></div>
+  <div class="stamp">; act 01 · <b>the find</b></div>
+  <h2 class="h-m abs fx left" data-at="0.2" style="left:150px;top:112px">Check the specs</h2>
+  <div class="tile fx zoom" data-at="0.9" style="left:150px;top:250px"><img src="img/before.jpg" alt=""><div class="lb"><small>CPU + board</small><b>i9-9900K · Z390-F</b></div></div>
+  <div class="tile fx zoom" data-at="2.2" style="left:690px;top:250px"><img src="img/ram.jpg" alt=""><div class="lb"><small>Memory</small><b>32 GB DDR4-3600</b></div></div>
+  <div class="tile fx zoom" data-at="3.4" style="left:1230px;top:250px"><img src="img/ssd.jpg" alt=""><div class="lb"><small>Storage</small><b>970 EVO Plus 1 TB</b></div></div>
+  <div class="tile fx zoom" data-at="4.6" style="left:150px;top:570px"><img src="img/aio.jpg" alt=""><div class="lb"><small>Cooler</small><b>Pure Loop 2 · 360 mm</b></div></div>
+  <div class="tile fx zoom" data-at="5.7" style="left:690px;top:570px"><img src="img/psu.jpg" alt=""><div class="lb"><small>Power</small><b>EVGA 850 W Gold</b></div></div>
+  <div class="tile fx zoom" data-at="6.6" style="left:1230px;top:570px"><img src="img/lianli.jpg" alt=""><div class="lb"><small>Case</small><b>Lian Li O11 · der8auer</b></div></div>
+  <div class="chip fx big" data-at="8.2" style="right:150px;top:100px">worth $680–950 used · paid $200</div>
+  <p class="vo" data-at="0.4">Check the specs. i9-9900K. Thirty-two gigs of RAM. One-terabyte NVMe. Three-sixty AIO. Eight-fifty gold power supply.</p>
+  <p class="vo" data-at="8.2">The RAM alone might cover what I paid.</p>
+</section>
+
+<section class="scene" id="s-car" data-dur="5.5" data-act="THE FIND" data-mx="1.6">
+  <div class="blurbg" style="background-image:url(img/car.jpg)"></div>
+  <div class="ph" style="left:555px;top:0;width:810px;height:1080px"><img class="kb" src="img/car.jpg" alt="The PC strapped into a car seat with the seatbelt" style="--z0:1.02;--z1:1.12;--kbd:6s"></div>
+  <div class="stamp">; act 01 · <b>the find</b></div><div class="date">OCT 26 · PICKUP</div>
+  <p class="quote abs fx right" data-at="2.2" style="left:1420px;top:420px;width:420px;font-size:36px">He just wanted to get rid of the thing.</p>
+  <p class="vo" data-at="0.4">Picked it up the next day. Buckled her in.</p>
+</section>
+
+<section class="scene" id="s-catch" data-dur="9" data-act="THE FIND" data-mx="0.6">
+  <div class="ph full"><img class="kb" src="img/before.jpg" alt="The PC as bought: open frame, cables everywhere, dust" style="--z0:1.12;--z1:1.02;--x0:3%;--x1:0%;--kbd:10s"></div>
+  <div class="scrim side"></div>
+  <div class="stamp">; act 01 · <b>the find</b></div>
+  <span class="tag abs fx left" data-at="0.3" style="left:150px;top:190px">the catch</span>
+  <ul class="list" style="left:150px;top:270px">
+    <li class="fx left" data-at="1.8">No side panels. No front. No glass.</li>
+    <li class="fx left" data-at="4.4">Most of the screws: gone.</li>
+    <li class="fx left" data-at="6.2">Cooler pump unplugged. 87 °C in the BIOS.</li>
+    <li class="fx left" data-at="7.4">Onboard Ethernet: dead.</li>
+  </ul>
+  <p class="vo" data-at="0.4">Okay, there was a catch. The case was missing literally every panel. Most of the screws were gone. The cooler was barely hanging on.</p>
+</section>
+
+<section class="scene" id="s-newcase" data-dur="8" data-act="THE FIND" data-mx="1.8">
+  <div class="bench"></div>
+  <div class="stamp">; act 01 · <b>the restore</b></div><div class="date">OCT 27 – 31 · $90 CASE</div>
+  <div class="print fx drop" data-at="0.4" style="left:130px;top:150px;width:470px;height:640px;--r:-4deg"><img src="img/newcase.jpg" alt="Empty new case"><i>new case · ten drive bays</i></div>
+  <div class="print fx drop" data-at="1.9" style="left:560px;top:190px;width:470px;height:640px;--r:3deg"><img src="img/cables.jpg" alt="Cable management behind the motherboard tray"><i>cables, redone</i></div>
+  <div class="print fx drop" data-at="3.4" style="left:990px;top:140px;width:470px;height:640px;--r:-2deg"><img src="img/rebuilt.jpg" alt="The rebuilt PC"><i>fresh BIOS · drives tested</i></div>
+  <div class="print fx drop" data-at="4.9" style="left:1400px;top:210px;width:440px;height:600px;--r:5deg"><img src="img/interior.jpg" alt="Clean interior"><i>clean</i></div>
+  <p class="vo" data-at="0.4">So: new case with real drive bays, clean cables, fresh BIOS, and every drive tested.</p>
+</section>
+
+<section class="scene" id="s-alive" data-dur="5" data-act="THE FIND" data-mx="2.4">
+  <div class="ph full"><img class="kb" src="img/alive.jpg" alt="First boot: RGB fans lit, monitor on" style="--z0:1.04;--z1:1.14;--x1:-2%;--kbd:6s"></div>
+  <div class="scrim"></div>
+  <div class="date">OCT 31 · 7:10 PM · IN THE NEW CASE</div>
+  <h2 class="h-l abs fx up" data-at="0.9" style="left:110px;bottom:210px">She's alive.</h2>
+  <p class="abs mono fx up" data-at="1.6" style="left:116px;bottom:160px;font-size:26px;color:var(--gold-hi)">&ldquo;She's alive muhahahahahah&rdquo; &mdash; me, to the group chat</p>
+  <p class="vo" data-at="0.6">And... she's alive.</p>
+</section>
+
+<section class="scene" id="s-name" data-dur="8" data-act="THE FIND" data-mx="2">
+  <div class="bench"></div>
+  <h2 class="h-xl abs fx blur" data-at="0.2" style="left:140px;top:100px">NAS-T-BOX</h2>
+  <div class="nm fx up" data-at="1.9" style="top:400px"><b>NAS</b><span>network attached storage</span></div>
+  <div class="nm fx up" data-at="3.5" style="top:560px"><b>T</b><span>token generator</span></div>
+  <div class="nm fx up" data-at="4.9" style="top:720px"><b>BOX</b><span>&ldquo;box is a box lol&rdquo;</span></div>
+  <p class="vo" data-at="0.4">I named it NAS-T-BOX. NAS for storage. T for token generator. Box is a box. Yes, the pun's on purpose.</p>
+</section>
+
+<!-- ======================= ACT 2 · THE BRAIN ======================= -->
+<section class="scene act" id="a-brain" data-dur="3" data-act="THE BRAIN" data-mx="-1">
+  <div class="actph"><img class="kb" src="img/tesla.jpg" alt="Tesla V100 close-up" style="--z0:1.05;--z1:1.14;--kbd:4s"></div><div class="layers"></div>
+  <div class="no">; ACT 02</div><h2 class="h-xl">The brain</h2><div class="act-rule"></div>
+  <p class="sub">It needed a GPU. 3090s cost a gazillion dollars.</p>
+</section>
+
+<section class="scene" id="s-v100" data-dur="10.5" data-act="THE BRAIN" data-mx="1.8">
+  <div class="ph full"><img class="kb" src="img/v100.jpg" alt="NVIDIA Tesla V100 on the desk" style="--z0:1.14;--z1:1.03;--x0:-3%;--x1:1%;--kbd:12s"></div>
+  <div class="scrim rside"></div>
+  <div class="stamp">; act 02 · <b>the brain</b></div><div class="date">NOV 10</div>
+  <span class="tag abs fx right" data-at="2.6" style="right:150px;top:200px">NVIDIA Tesla V100</span>
+  <h2 class="abs fx right" data-at="3.3" style="right:150px;top:270px;text-align:right"><span class="h-xl gold">32 GB</span></h2>
+  <p class="abs fx right" data-at="3.9" style="right:150px;top:480px;text-align:right;font:500 40px/1.3 var(--sans)">of HBM2 VRAM on one card.<br><span class="mute">Datacenter GPU, launched 2017.<br>250 W. Zero fans.</span></p>
+  <div class="chip fx big" data-at="6.6" style="right:150px;top:730px">$849.99 used, on eBay</div>
+  <div class="print fx drop" data-at="1.2" style="left:110px;top:520px;width:300px;height:400px;--r:-5deg"><img src="img/box.jpg" alt="The shipping box"><i>it's here</i></div>
+  <p class="vo" data-at="0.4">Now it needed a brain. 3090s cost a gazillion dollars. A Tesla V100? Thirty-two gigs of VRAM for about eight hundred bucks. I pulled the trigger.</p>
+</section>
+
+<section class="scene" id="s-nofan" data-dur="10.5" data-act="THE BRAIN" data-mx="0.8">
+  <div class="blurbg" style="background-image:url(img/gauge2.jpg)"></div>
+  <div class="ph" style="left:0;top:0;width:1110px;height:1080px"><img class="kb" src="img/gauge2.jpg" alt="The intake end of the V100: bare heatsink fins" style="--z0:1.02;--z1:1.14;--x1:-2%;--kbd:11s"></div>
+  <div class="scrim rside"></div>
+  <div class="stamp">; act 02 · <b>the brain</b></div>
+  <h2 class="h-xl abs fx right" data-at="0.5" style="right:120px;top:150px;text-align:right">No<br>fans.</h2>
+  <p class="abs fx right" data-at="2.6" style="right:124px;top:570px;width:640px;text-align:right;font:400 34px/1.35 var(--sans);color:#d8d1c3">It expects a server to shove air through it. In a normal case it just cooks.</p>
+  <p class="quote abs fx up" data-at="6.6" style="right:124px;top:740px;width:820px;text-align:right;font-size:36px;color:var(--gold-hi)">Oh wow I could design a big shroud to run from the front intakes directly routed to the front of the gpus</p>
+  <p class="vo" data-at="0.4">One problem. These cards have no fans. They're made for servers that sound like jet engines.</p>
+  <p class="vo" data-at="6.6">So I thought: what if I just print my own duct?</p>
+</section>
+
+<!-- ======================= ACT 3 · THE DUCT ======================= -->
+<section class="scene act" id="a-duct" data-dur="3.5" data-act="THE DUCT" data-mx="-1">
+  <div class="actph"><img class="kb" src="img/white_hand.jpg" alt="The printed duct on the card" style="--z0:1.05;--z1:1.14;--kbd:4s"></div><div class="layers"></div>
+  <div class="no">; ACT 03</div><h2 class="h-xl">The duct</h2><div class="act-rule"></div>
+  <p class="sub">Eleven versions of one part. Designed in a chat window, printed in my room.</p>
+</section>
+
+<section class="scene" id="s-ender" data-dur="12.5" data-act="THE DUCT" data-mx="1.5">
+  <div class="blurbg" style="background-image:url(img/ender.jpg)"></div>
+  <div class="ph" style="left:0;top:0;width:810px;height:1080px"><img class="kb" src="img/ender.jpg" alt="Creality Ender 3 V2 on the desk" style="--z0:1.03;--z1:1.13;--y1:-2%;--kbd:13s"></div>
+  <div class="stamp" style="left:880px">; act 03 · <b>the printer</b></div><div class="date">ENDER 3 V2 · BOUGHT 2022</div>
+  <div class="pipe" style="left:880px;top:190px">
+    <div class="fx right" data-at="6.6"><small>01</small>Photos + a steel ruler<em>me</em></div>
+    <div class="fx right" data-at="7.4"><small>02</small>Part written as code, checked in 3D<em>Claude</em></div>
+    <div class="fx right" data-at="8.2"><small>03</small>Sliced to G-code<em>Claude</em></div>
+    <div class="fx right" data-at="9.0"><small>04</small>Sent to the printer through the NAS<em>Claude</em></div>
+    <div class="fx right" data-at="9.8"><small>05</small>&ldquo;Bed clear.&rdquo;<em>me</em></div>
+  </div>
+  <div class="print fx drop" data-at="2.2" style="left:1380px;top:640px;width:400px;height:320px;--r:4deg"><img src="img/firstprint.jpg" alt="First test print"><i>first print: a cat</i></div>
+  <p class="vo" data-at="0.4">I had an Ender 3 from 2022 I'd given up on. I plugged it into the NAS.</p>
+  <p class="vo" data-at="6.5">Now Claude designs the part, slices it, and starts the print. I just say: bed clear.</p>
+</section>
+
+<section class="scene" id="s-hub" data-dur="7.5" data-act="THE DUCT" data-mx="1.8">
+  <div class="bench"></div>
+  <div class="stamp">; act 03 · <b>warm-up</b></div><div class="date">NOV 8 · FAN HUB CASE</div>
+  <div class="print fx drop" data-at="0.3" style="left:120px;top:190px;width:520px;height:430px;--r:-5deg"><img src="img/hubmeasure.jpg" alt="Fan hub board with a tape measure"><i>measure</i></div>
+  <div class="print fx drop" data-at="1.2" style="left:560px;top:150px;width:410px;height:560px;--r:3deg"><img src="img/hub_v1.jpg" alt="First print of the case, rough"><i>v1 · didn't fit</i></div>
+  <div class="print fx drop" data-at="2.2" style="left:900px;top:220px;width:410px;height:560px;--r:-2deg"><img src="img/hub_fit.jpg" alt="Board test-fitted in the case"><i>v2 · too big</i></div>
+  <div class="print fx drop" data-at="3.2" style="left:1270px;top:120px;width:520px;height:430px;--r:4deg"><img src="img/hub_open.jpg" alt="Board sitting in the v4 base"><i>v4 · &ldquo;nearly perfect!&rdquo;</i></div>
+  <div class="print fx drop" data-at="4.2" style="left:1340px;top:570px;width:440px;height:360px;--r:-3deg"><img src="img/hub_done.jpg" alt="Finished closed case"><i>v5 · done</i></div>
+  <p class="vo" data-at="0.4">We warmed up on a little case for the fan hub. Five versions. Measure, print, test, fix.</p>
+</section>
+
+<section class="scene" id="s-gauge" data-dur="12" data-act="THE DUCT" data-mx="1.5">
+  <div class="bench"></div>
+  <div class="stamp">; act 03 · <b>rule one</b></div><div class="date">NOV 11</div>
+  <div class="print fx drop" data-at="0.5" data-gone="8.3" style="left:130px;top:150px;width:480px;height:650px;--r:-3deg"><img src="img/gauge1.jpg" alt="Test collar slid onto the card end"><i>test collar no. 1</i></div>
+  <div class="print fx drop" data-at="2.0" data-gone="8.3" style="left:590px;top:210px;width:620px;height:500px;--r:2deg"><img src="img/gaugelabel.jpg" alt="Size embossed on the gauge handle: 98.5 x 37"><i>size stamped on the handle</i></div>
+  <h2 class="abs fx big" data-at="4.4" data-gone="8.3" style="left:1260px;top:300px"><span class="h-l gold">98.5 × 37</span><br><span class="mono" style="font-size:28px;letter-spacing:.14em">MM · FITS. EVERY SLEEVE AFTER THIS USES IT.</span></h2>
+  <div class="print fx drop" data-at="8.4" style="left:170px;top:170px;width:760px;height:620px;--r:-2deg"><img src="img/measure1.jpg" alt="Steel ruler across the case interior"><i>front of the case → card end: 158.5 mm</i></div>
+  <div class="print fx drop" data-at="9.4" style="left:1010px;top:140px;width:500px;height:680px;--r:4deg"><img src="img/measure2.jpg" alt="Ruler against the card and fan"><i>&ldquo;god damn mirror finish on that ruler&rdquo;</i></div>
+  <p class="vo" data-at="0.4">For the duct, rule one: don't guess. We printed test collars with the size stamped on them until one fit the card.</p>
+  <p class="vo" data-at="8.4">Then me, a steel ruler, and a lot of photos.</p>
+</section>
+
+<section class="scene" id="s-v1" data-dur="15" data-act="THE DUCT" data-mx="2">
+  <div class="bench"></div>
+  <div class="stamp">; act 03 · <b>tunnel v2</b></div><div class="date">NOV 12 · BLACK PETG</div>
+  <div class="vp fx left" data-at="0.3" style="left:130px;top:160px;width:900px;height:687px"><div class="bar2"><b>v100_tunnel_plate_v2</b> · funnel + collar + cap · 16 h 08 m</div><img src="img/r_v2_parts.jpg" alt="Render of the three-piece tunnel"></div>
+  <div class="phone fx up" data-at="3.2" style="left:1130px;top:120px;width:380px;height:740px"><img src="img/weeklong.jpg" alt="Phone app showing 153 hours remaining"></div>
+  <h2 class="abs fx right" data-at="4.2" style="left:1560px;top:250px"><span class="h-m hot strike" data-at="7.1">153 h</span></h2>
+  <h2 class="abs fx right" data-at="7.4" style="left:1560px;top:370px"><span class="h-m ok">16 h</span></h2>
+  <p class="abs mono fx up" data-at="7.4" style="left:1560px;top:480px;width:300px;font-size:22px;line-height:1.4;color:var(--mute)">my app's estimate was wrong, not the print</p>
+  <div class="chip fx big" data-at="10.1" style="left:150px;top:720px;font-size:46px;border-color:var(--hot);color:var(--paper)">44 %: an app update kills the print</div>
+  <div class="chip fx big" data-at="12.4" style="left:150px;top:810px;font-size:46px;border-color:var(--ok);color:var(--paper)">resumed from that exact layer</div>
+  <p class="vo" data-at="0.4">The first real one: a three-piece tunnel in black PETG. My phone said a hundred fifty-three hours left.</p>
+  <p class="vo" data-at="7.1">That was a bug. It was sixteen.</p>
+  <p class="vo" data-at="9.9">Halfway through, an update killed the print. Claude rebuilt the file. It finished.</p>
+</section>
+
+<section class="scene" id="s-tape" data-dur="14" data-act="THE DUCT" data-mx="1.4">
+  <div class="bench"></div>
+  <div class="stamp">; act 03 · <b>the duct tape era</b></div><div class="date">NOV 12 – 21</div>
+  <div class="print fx drop" data-at="0.3" data-gone="6.3" style="left:140px;top:140px;width:500px;height:680px;--r:-3deg"><img src="img/tapepc.jpg" alt="The PC with a duct-tape covered shroud"><i>it worked. it was ugly</i></div>
+  <div class="print fx drop" data-at="1.4" data-gone="6.3" style="left:680px;top:180px;width:500px;height:680px;--r:2deg"><img src="img/tape1.jpg" alt="Close-up of the taped shroud"><i>&ldquo;more duct tape than I wanted&rdquo;</i></div>
+  <h2 class="abs fx big" data-at="3.6" data-gone="6.3" style="left:1260px;top:300px"><span class="mono" style="font-size:24px;letter-spacing:.14em;color:var(--mute)">IDLE TEMP</span><br><span class="h-l" style="font-size:118px;white-space:nowrap">43 → <span class="air">39 °C</span></span><br><span class="mono" style="font-size:22px;letter-spacing:.1em;color:var(--mute)">TWO OLD CASE FANS + A LOT OF TAPE</span></h2>
+  <div class="print fx drop" data-at="6.4" style="left:110px;top:160px;width:700px;height:570px;--r:-2deg"><img src="img/note_curve.jpg" alt="Photo marked in red: too much of a curve on the duct"><i>too much curve</i></div>
+  <div class="print fx drop" data-at="8.6" style="left:790px;top:120px;width:460px;height:630px;--r:3deg"><img src="img/note_cable.jpg" alt="Photo marked in red: cable bend too extreme"><i>cable bend too sharp</i></div>
+  <div class="print fx drop" data-at="10.6" style="left:1260px;top:170px;width:460px;height:630px;--r:-4deg"><img src="img/note_funnel.jpg" alt="Photo marked in red: funnel curves too hard"><i>make it a straight shot</i></div>
+  <p class="vo" data-at="0.4">It kinda fit. With way more duct tape than I wanted. But temps dropped right away.</p>
+  <p class="vo" data-at="6.4">So I marked up photos with a red pen. Too much curve. Cable bend's too sharp. Make it a straight shot.</p>
+</section>
+
+<section class="scene" id="s-pla" data-dur="8" data-act="THE DUCT" data-mx="0.5">
+  <div class="ph full"><img class="kb" src="img/straightener_bed.jpg" alt="White PLA part on the print bed" style="--z0:1.08;--z1:1.18;--kbd:9s"></div>
+  <div class="scrim heavy"></div>
+  <div class="stamp">; act 03 · <b>the shower thought</b></div><div class="date">NOV 14</div>
+  <p class="quote abs fx up" data-at="0.4" style="left:150px;top:230px;width:1500px;font-size:74px;line-height:1.15">Wait a second. Why do we even need to print in petg? It's not out take, it's in take.</p>
+  <p class="abs fx up" data-at="5.2" style="left:150px;top:690px;font:500 44px/1.3 var(--sans)"><span class="mute">Black PETG, stringy and warping</span> &nbsp;→&nbsp; <span class="gold">plain white PLA</span></p>
+  <p class="vo" data-at="0.4">Then it clicked. This is the intake. It only ever touches cool air. Why am I fighting PETG? Back to PLA.</p>
+</section>
+
+<section class="scene" id="s-versions" data-dur="19" data-act="THE DUCT" data-mx="2.6">
+  <div class="bench"></div>
+  <div class="stamp">; act 03 · <b>every revision</b></div><div class="date">NOV 15 → 17</div>
+  <div class="vp" style="left:130px;top:150px;width:1010px;height:717px"><div class="bar2"><b>v100_duct</b> · card end · same camera every version</div>
+    <img class="fx on" data-at="0" data-off="3.45" src="img/r_v3_back.jpg" alt="Duct v3, card end">
+    <img class="fx" data-at="3.05" data-off="6.15" src="img/r_v4_back.jpg" alt="Duct v4, card end">
+    <img class="fx" data-at="5.75" data-off="8.15" src="img/r_v5_back.jpg" alt="Duct v5, card end">
+    <img class="fx" data-at="7.75" data-off="9.15" src="img/r_v6_back.jpg" alt="Duct v6, card end">
+    <img class="fx" data-at="8.75" data-off="10.05" src="img/r_v7_back.jpg" alt="Duct v7, card end">
+    <img class="fx" data-at="9.65" data-off="13.65" src="img/r_v8_back.jpg" alt="Duct v8, card end">
+    <img class="fx" data-at="13.25" data-off="15.85" src="img/r_v9_back.jpg" alt="Duct v9, card end">
+    <img class="fx" data-at="15.45" src="img/r_v10_back.jpg" alt="Duct v10, card end"></div>
+  <div class="vnum fx" data-at="0" data-off="3.2" style="left:1220px;top:150px"><small>v</small>3</div>
+  <div class="vnote fx" data-at="0" data-off="3.2" style="left:1230px;top:520px;width:600px"><small>one piece</small>Straight shot. Snap pins instead of screws.</div>
+  <div class="vnum fx" data-at="3.2" data-off="5.9" style="left:1220px;top:150px"><small>v</small>4</div>
+  <div class="vnote fx" data-at="3.2" data-off="5.9" style="left:1230px;top:520px;width:600px"><small>keeps the adapter</small>Pins only through the middle of the fan stack.</div>
+  <div class="vnum fx" data-at="5.9" data-off="7.9" style="left:1220px;top:150px"><small>v</small>5</div>
+  <div class="vnote fx" data-at="5.9" data-off="7.9" style="left:1230px;top:520px;width:600px"><small>cancelled at 31 %</small>&ldquo;Wait you changed the length to 93.8 from 98.5?!&rdquo;</div>
+  <div class="vnum fx" data-at="7.9" data-off="8.9" style="left:1220px;top:150px"><small>v</small>6</div>
+  <div class="vnote fx" data-at="7.9" data-off="8.9" style="left:1230px;top:520px;width:600px"><small>back to 98.5 × 37</small>First test slice on the real card.</div>
+  <div class="vnum fx" data-at="8.9" data-off="9.8" style="left:1220px;top:150px"><small>v</small>7</div>
+  <div class="vnote fx" data-at="8.9" data-off="9.8" style="left:1230px;top:520px;width:600px"><small>never printed</small>Longer flex lip. Then the lip snapped off.</div>
+  <div class="vnum fx" data-at="9.8" data-off="13.4" style="left:1220px;top:150px"><small>v</small>8</div>
+  <div class="vnote fx" data-at="9.8" data-off="13.4" style="left:1230px;top:520px;width:600px"><small>the dime test</small>No lip. Rigid walls. +0.55 mm here, +0.3 there.</div>
+  <div class="vnum fx" data-at="13.4" data-off="15.6" style="left:1220px;top:150px"><small>v</small>9</div>
+  <div class="vnote fx" data-at="13.4" data-off="15.6" style="left:1230px;top:520px;width:600px"><small>slots for the board edge</small>&ldquo;The fit is perfect.&rdquo;</div>
+  <div class="vnum fx" data-at="15.6" style="left:1220px;top:150px"><small>v</small>10</div>
+  <div class="vnote fx" data-at="15.6" style="left:1230px;top:520px;width:600px"><small>16 h 07 m · 179 g</small>Deflectors aim the air into the fins. &ldquo;16hr print go&rdquo;</div>
+  <div class="dots" style="left:1230px;top:800px"><i class="fx on" data-at="0"></i><i class="fx" data-at="3.2"></i><i class="fx" data-at="5.9"></i><i class="fx" data-at="7.9"></i><i class="fx" data-at="8.9"></i><i class="fx" data-at="9.8"></i><i class="fx" data-at="13.4"></i><i class="fx" data-at="15.6"></i></div>
+  <p class="vo" data-at="0.4">After that it moved fast. V3: one piece, straight shot, snap pins instead of screws.</p>
+  <p class="vo" data-at="6">V5: I caught a wrong number.</p>
+  <p class="vo" data-at="9.8">V8: the dime test. Half a millimeter here, a third there.</p>
+  <p class="vo" data-at="14">V9: the fit is perfect. V10: sixteen-hour print. Go.</p>
+</section>
+
+<section class="scene" id="s-fit" data-dur="8.5" data-act="THE DUCT" data-mx="2.2">
+  <div class="bench"></div>
+  <div class="stamp">; act 03 · <b>test slices</b></div><div class="date">1.5 H EACH, NOT 16</div>
+  <div class="print fx drop" data-at="0.3" style="left:110px;top:160px;width:600px;height:440px;--r:-4deg"><img src="img/fit_a.jpg" alt="Test slice on the card with red and green marks"><i>v6 · red = gap, green = airtight</i></div>
+  <div class="print fx drop" data-at="1.4" style="left:660px;top:130px;width:600px;height:490px;--r:3deg"><img src="img/fit_quarter.jpg" alt="A coin wedged in the gap to measure it"><i>the dime test</i></div>
+  <div class="print fx drop" data-at="2.6" style="left:1220px;top:170px;width:600px;height:490px;--r:-2deg"><img src="img/fit_b.jpg" alt="v8 slice, with screw holes"><i>v8 · &ldquo;almost perfect&rdquo;</i></div>
+  <div class="print fx drop" data-at="3.8" style="left:330px;top:470px;width:600px;height:490px;--r:2deg"><img src="img/fit_note.jpg" alt="v9 slice with red marks where to add fills"><i>v9 · fill these in</i></div>
+  <div class="print fx drop" data-at="5.0" style="left:1010px;top:480px;width:380px;height:500px;--r:-5deg"><img src="img/pinsfail.jpg" alt="Failed stringy print of four pins"><i>pins: &ldquo;an abomination&rdquo;</i></div>
+  <p class="vo" data-at="0.4">Every version got a thin test slice first. I'd circle the gaps, and the next one came back tighter.</p>
+</section>
+
+<section class="scene" id="s-white" data-dur="7" data-act="THE DUCT" data-mx="3">
+  <div class="ph full fx on" data-at="0" data-off="3.7"><img class="kb" src="img/white_side.jpg" alt="Duct v10 fitted on the V100, held in hand" style="--z0:1.03;--z1:1.12;--x1:-2%;--kbd:5s"></div>
+  <div class="ph full fx" data-at="3.4"><img class="kb" src="img/white_inside.jpg" alt="Looking down the duct at the heatsink fins" style="--z0:1.25;--z1:1.02;--kbd:9s"></div>
+  <div class="scrim"></div>
+  <div class="stamp">; act 03 · <b>duct v10</b></div><div class="date">NOV 20</div>
+  <p class="vo" data-at="0.4">And then this came off the bed. Look down the barrel. That's the heatsink.</p>
+</section>
+
+<section class="scene" id="s-second" data-dur="8" data-act="THE DUCT" data-mx="1.2">
+  <div class="ph full"><img class="kb" src="img/desk2.jpg" alt="The desk: printer, PC, duct and a second V100" style="--z0:1.16;--z1:1.04;--x0:-4%;--x1:0%;--kbd:9s"></div>
+  <div class="scrim"></div>
+  <div class="stamp">; act 03 · <b>oops</b></div><div class="date">NOV 16 – 20</div>
+  <p class="quote abs fx up" data-at="3.0" style="left:110px;bottom:230px;width:1300px;font-size:58px">nobody warned me about how addicting buying v100s would be</p>
+  <div class="chip fx big" data-at="1.6" style="right:110px;top:140px">V100 × 2 · 64 GB</div>
+  <p class="vo" data-at="0.4">Then I did something dumb. I bought a second V100. Nobody warned me how addicting these are.</p>
+</section>
+
+<section class="scene" id="s-explode" data-dur="13.5" data-act="THE DUCT" data-mx="2.8">
+  <div class="bench"></div>
+  <canvas width="1920" height="1080" aria-label="Exploded 3D view of the twin duct assembly"></canvas>
+  <div class="vp fallback" style="left:360px;top:130px;width:1200px;height:800px"><div class="bar2"><b>v100_tunnel_v11</b> · exploded</div><img src="img/r_v11_exploded.jpg" alt="Exploded render of duct v11"></div>
+  <div class="stamp">; act 03 · <b>duct v11 · the twin</b></div><div class="date">23 H 52 M · 245 G</div>
+  <div class="lab3d" data-part="adapter">case adapter<small>no drilling</small></div>
+  <div class="lab3d below" data-part="fanA">Arctic P12 Pro<small>fan 1</small></div>
+  <div class="lab3d" data-part="straightener">flow straightener<small>9 vanes</small></div>
+  <div class="lab3d below" data-part="fanB">Arctic P12 Pro<small>fan 2</small></div>
+  <div class="lab3d" data-part="rail_frame">rail frame<small>+ 4 snap pins</small></div>
+  <div class="lab3d" data-part="duct">twin duct<small>one web, two sleeves</small></div>
+  <div class="lab3d" data-part="cards">2 × Tesla V100</div>
+  <p class="vo" data-at="0.4">So version eleven is a twin. Case adapter, two Arctic fans, a flow straightener, snap-in rails.</p>
+  <p class="vo" data-at="6.8">One funnel splits the air between both cards. No glue. No drilling.</p>
+</section>
+
+<section class="scene" id="s-twin" data-dur="10.5" data-act="THE DUCT" data-mx="2">
+  <div class="bench"></div>
+  <div class="stamp">; act 03 · <b>install day</b></div><div class="date">NOV 21</div>
+  <div class="print fx drop" data-at="0.3" style="left:120px;top:140px;width:500px;height:680px;--r:-3deg"><img src="img/twin_raw.jpg" alt="The black twin duct off the printer, power leads through it"><i>v11, black PLA</i></div>
+  <div class="print fx drop" data-at="1.6" style="left:640px;top:170px;width:720px;height:580px;--r:2deg"><img src="img/final_duct.jpg" alt="Twin duct installed, cable exiting the side window"><i>&ldquo;used the ol string trick&rdquo;</i></div>
+  <div class="print fx drop" data-at="6.9" style="left:1390px;top:110px;width:400px;height:540px;--r:4deg"><img src="img/sag2.jpg" alt="Printed sag bracket under the card"><i>sag bracket · 5 versions</i></div>
+  <div class="vp fx up" data-at="7.8" style="left:1430px;top:660px;width:380px;height:296px"><div class="bar2"><b>sag_v4</b> · screw jack</div><img src="img/r_sag_v4_slide.jpg" alt="Render of the sag bracket screw jack"></div>
+  <p class="vo" data-at="0.4">Printed in black. Getting the power cable through was a fight. I used the old string trick.</p>
+  <p class="vo" data-at="6.9">Plus a sag bracket with a tiny screw jack.</p>
+</section>
+
+<section class="scene" id="s-repaste" data-dur="10" data-act="THE DUCT" data-mx="1.4">
+  <div class="ph full"><img class="kb" src="img/teardown.jpg" alt="V100 taken apart: heatsink off, bare die" style="--z0:1.04;--z1:1.14;--x1:2%;--kbd:11s"></div>
+  <div class="scrim side"></div>
+  <div class="stamp">; act 03 · <b>while I was in there</b></div><div class="date">NOV 15</div>
+  <div class="print fx drop" data-at="2.6" style="left:960px;top:150px;width:470px;height:390px;--r:-3deg"><img src="img/oldpaste.jpg" alt="Old thermal paste being scraped off"><i>old paste: one dry dot</i></div>
+  <div class="print fx drop" data-at="4.4" style="left:1440px;top:210px;width:370px;height:490px;--r:4deg"><img src="img/newpaste.jpg" alt="Fresh paste spread over the die"><i>MX-4, spread edge to edge</i></div>
+  <h2 class="abs fx big" data-at="7.5" style="left:150px;top:300px"><span class="h-xl air">−8 °C</span></h2>
+  <p class="abs fx up" data-at="7.9" style="left:156px;top:540px;font:500 38px/1.3 var(--sans)">on the memory, at 15 W more power<br><span class="mute mono" style="font-size:24px">83 → 75 °C · 15-MIN FULL LOAD</span></p>
+  <p class="vo" data-at="0.4">While I was in there, I repasted the first card. The old paste was a dried-up dot in the middle.</p>
+  <p class="vo" data-at="7.5">Eight degrees cooler on the memory.</p>
+</section>
+
+<section class="scene" id="s-burn" data-dur="12.5" data-act="THE DUCT" data-mx="2.6">
+  <div class="bench"></div>
+  <div class="stamp">; act 03 · <b>did it work?</b></div><div class="date">15-MIN GPU-BURN · SAME CARD</div>
+  <div class="bahead" style="top:150px"><span></span><span class="hot fx" data-at="0.4">before · old paste, taped duct</span><span></span><span class="air fx" data-at="6.4">after · new paste + duct v10</span></div>
+  <div class="ba" style="top:200px"><div class="k">memory temp</div><div class="v b fx left" data-at="1.0"><span data-at="1.0" data-count="84" data-from="40">84</span><small>°C</small></div><div class="ar fx" data-at="6.4">→</div><div class="v a fx right" data-at="6.6"><span data-at="6.6" data-count="66" data-from="84">66</span><small>°C</small></div></div>
+  <div class="ba" style="top:420px"><div class="k">power it could hold</div><div class="v b fx left" data-at="3.0"><span data-at="3.0" data-count="155" data-from="100">155</span><small>W</small></div><div class="ar fx" data-at="8.0">→</div><div class="v a fx right" data-at="8.2"><span data-at="8.2" data-count="185" data-from="155">185</span><small>W</small></div></div>
+  <div class="ba" style="top:640px;border-bottom:1px solid var(--line)"><div class="k">compute</div><div class="v b fx left" data-at="4.4"><span data-at="4.4" data-count="10.0" data-from="8.0">10.0</span><small>TFLOPS</small></div><div class="ar fx" data-at="9.6">→</div><div class="v a fx right" data-at="9.8"><span data-at="9.8" data-count="11.7" data-from="10.0">11.7</span><small>TFLOPS</small></div></div>
+  <p class="vo" data-at="0.4">Same fifteen-minute stress test. Before: eighty-four degrees, stuck at one fifty-five watts.</p>
+  <p class="vo" data-at="6.4">After: sixty-six degrees at one eighty-five. Cooler, and seventeen percent faster.</p>
+</section>
+
+<!-- ======================= ACT 4 · THE RESULT ======================= -->
+<section class="scene act" id="a-result" data-dur="3" data-act="THE RESULT" data-mx="-1">
+  <div class="actph"><img class="kb" src="img/rgb1.jpg" alt="The PC lit up" style="--z0:1.05;--z1:1.14;--kbd:4s"></div><div class="layers"></div>
+  <div class="no">; ACT 04</div><h2 class="h-xl">The result</h2><div class="act-rule"></div>
+  <p class="sub">Both cards. One duct. Panels on.</p>
+</section>
+
+<section class="scene" id="s-hero" data-dur="4.5" data-act="THE RESULT" data-mx="3.4">
+  <div class="ph full"><img class="kb" src="img/final_cards.jpg" alt="Two Tesla V100 cards stacked, fed by the black twin duct" style="--z0:1.02;--z1:1.13;--x1:-1.5%;--kbd:5s"></div>
+  <div class="scrim"></div>
+  <div class="date">NOV 21 · 8:39 PM</div>
+  <p class="vo" data-at="0.8">So here she is.</p>
+</section>
+
+<section class="scene" id="s-hero2" data-dur="8.5" data-act="THE RESULT" data-mx="3.4">
+  <div class="ph full fx on" data-at="0" data-off="3.2"><img class="kb" src="img/final_wide.jpg" alt="Full interior: AIO, drive cages, two V100s and the duct" style="--z0:1.12;--z1:1.03;--kbd:4s"></div>
+  <div class="fx" data-at="2.9" data-off="6.0" style="position:absolute;inset:0"><div class="blurbg" style="background-image:url(img/final_full.jpg)"></div><div class="ph" style="left:555px;top:0;width:810px;height:1080px"><img src="img/final_full.jpg" alt="The whole case, side on"></div></div>
+  <div class="ph full fx" data-at="5.7"><img class="kb" src="img/final_rgb.jpg" alt="Fans lit, cards installed" style="--z0:1.03;--z1:1.12;--kbd:9s"></div>
+  <div class="scrim"></div>
+  <div class="chip fx big" data-at="0.5" style="left:110px;top:120px">2 × Tesla V100</div>
+  <div class="chip fx big" data-at="2.0" style="left:110px;top:230px">64 GB VRAM</div>
+  <div class="chip fx big" data-at="3.6" style="left:110px;top:340px">20 TB of disks</div>
+  <div class="chip fx big" data-at="5.4" style="left:110px;top:450px">one $200 OfferUp PC</div>
+  <p class="vo" data-at="0.4">Two Tesla V100s. Sixty-four gigs of VRAM. Twenty terabytes of storage. In a two-hundred-dollar OfferUp PC.</p>
+</section>
+
+<section class="scene" id="s-sheet" data-dur="8" data-act="THE RESULT" data-mx="2.4">
+  <div class="bench"></div>
+  <div class="ph" style="left:0;top:0;width:700px;height:1080px"><img class="kb" src="img/final_full.jpg" alt="The finished machine, side on" style="--z0:1.03;--z1:1.1;--kbd:9s"></div>
+  <div class="stamp" style="left:780px">; act 04 · <b>the build sheet</b></div>
+  <dl class="kv abs" style="left:780px;top:150px;width:1010px">
+    <dt class="fx right" data-at="0.3">CPU</dt><dd class="fx right" data-at="0.3">Intel Core i9-9900K · 8 cores</dd>
+    <dt class="fx right" data-at="0.7">Board</dt><dd class="fx right" data-at="0.7">ASUS ROG Strix Z390-F Gaming</dd>
+    <dt class="fx right" data-at="1.1">Memory</dt><dd class="fx right" data-at="1.1">32 GB DDR4-3600</dd>
+    <dt class="fx right" data-at="1.5">GPUs</dt><dd class="fx right" data-at="1.5"><span class="gold">2 × NVIDIA Tesla V100 32 GB</span>, capped at 185 W each</dd>
+    <dt class="fx right" data-at="1.9">Pool</dt><dd class="fx right" data-at="1.9">4 × 4 TB in RAIDZ2 · any two drives can die</dd>
+    <dt class="fx right" data-at="2.3">Extra</dt><dd class="fx right" data-at="2.3">1 TB NVMe for apps + models · 2 TB backup disk</dd>
+    <dt class="fx right" data-at="2.7">Cooling</dt><dd class="fx right" data-at="2.7">360 mm AIO · twin duct v11 · 2 × Arctic P12 Pro</dd>
+    <dt class="fx right" data-at="3.1">Power</dt><dd class="fx right" data-at="3.1">EVGA SuperNOVA 850 G5</dd>
+    <dt class="fx right" data-at="3.5">OS</dt><dd class="fx right" data-at="3.5">Ubuntu Server · ZFS · Docker · Tailscale</dd>
+  </dl>
+  <h2 class="abs fx big" data-at="4.6" style="left:780px;top:700px"><span class="mono" style="font-size:24px;letter-spacing:.14em;color:var(--mute)">ALL IN</span><br><span class="h-l gold">about $2,000</span></h2>
+  <p class="abs mono fx up" data-at="5.2" style="left:784px;top:900px;font-size:22px;letter-spacing:.06em;color:var(--mute)">$200 PC · $90 CASE · $1,657 TWO V100s · PLUS CABLES, FANS, NIC, SSD</p>
+  <p class="vo" data-at="0.4">Eight-year-old CPU. Datacenter GPUs. Surveillance drives.</p>
+  <p class="vo" data-at="4.6">All in? About two grand.</p>
+</section>
+
+<section class="scene" id="s-bench" data-dur="13" data-act="THE RESULT" data-mx="3">
+  <div class="bench"></div>
+  <div class="stamp">; act 04 · <b>benchmarks</b></div><div class="date">TOKENS / SEC · NOV 23</div>
+  <h2 class="h-m abs" style="left:150px;top:110px">How fast it talks</h2>
+  <div class="bars" style="top:240px">
+    <div class="r top fx" data-at="0.8" style="--w:100%"><div class="n">Qwen3.8 27B · 6-bit<small>both V100s · fast engine</small></div><div class="t"><i></i></div><div class="q"><span data-at="0.8" data-count="143">143</span><small>tok/s</small></div></div>
+    <div class="r fx" data-at="2.2" style="--w:83.2%"><div class="n">gpt-oss 20B<small>one V100</small></div><div class="t"><i></i></div><div class="q"><span data-at="2.2" data-count="119">119</span><small>tok/s</small></div></div>
+    <div class="r fx" data-at="3.2" style="--w:65.7%"><div class="n">Qwen3.8 27B · 8-bit<small>both V100s · fast engine</small></div><div class="t"><i></i></div><div class="q"><span data-at="3.2" data-count="94">94</span><small>tok/s</small></div></div>
+    <div class="r fx" data-at="4.2" style="--w:51%"><div class="n">gpt-oss 120B<small>needs both cards · 65 GB</small></div><div class="t"><i></i></div><div class="q"><span data-at="4.2" data-count="73">73</span><small>tok/s</small></div></div>
+    <div class="r fx" data-at="5.2" style="--w:49%"><div class="n">Inkling 2 Mini 26B<small>one V100</small></div><div class="t"><i></i></div><div class="q"><span data-at="5.2" data-count="70">70</span><small>tok/s</small></div></div>
+    <div class="r fx" data-at="6.2" style="--w:11.2%"><div class="n">DeepSeek-R1 70B<small>both V100s</small></div><div class="t"><i></i></div><div class="q"><span data-at="6.2" data-count="16">16</span><small>tok/s</small></div></div>
+  </div>
+  <p class="abs mono fx up" data-at="7.4" style="left:150px;top:760px;font-size:24px;letter-spacing:.06em;line-height:1.7;color:var(--mute)">FULL LOAD, BOTH CARDS, 15 MIN: 61–64 °C · 185 W EACH · 23.1 TFLOPS · 0 ERRORS<br><span style="color:var(--paper)">THE SAME 27B MODEL ON MY GAMING PC'S 3080 TI: ABOUT 7 TOK/S. IT DOESN'T FIT IN 12 GB.</span></p>
+  <p class="vo" data-at="0.4">Benchmarks. A twenty-seven-billion-parameter model: a hundred forty-three tokens a second across both cards.</p>
+  <p class="vo" data-at="7.4">That's faster than a lot of cloud models type. On GPUs from 2017.</p>
+</section>
+
+<!-- ======================= ACT 5 · THE POINT ======================= -->
+<section class="scene act" id="a-point" data-dur="3" data-act="THE POINT" data-mx="-1">
+  <div class="actph"><img class="kb" src="img/desk1.jpg" alt="The workbench" style="--z0:1.05;--z1:1.14;--kbd:4s"></div><div class="layers"></div>
+  <div class="no">; ACT 05</div><h2 class="h-xl">The point</h2><div class="act-rule"></div>
+  <p class="sub">What it actually does, every day.</p>
+</section>
+
+<section class="scene" id="s-uses" data-dur="17" data-act="THE POINT" data-mx="2.2">
+  <div class="bench"></div>
+  <div class="stamp">; act 05 · <b>what it does all day</b></div>
+  <div class="use fx up" data-at="0.8" style="left:150px;top:150px"><small>01</small><b>Photo backup</b><p><strong>6,847</strong> photos and videos. New shots land in about a minute.</p></div>
+  <div class="use fx up" data-at="2.6" style="left:562px;top:150px"><small>02</small><b>Photo search</b><p>Faces, text and &ldquo;that one beach pic&rdquo; on the GPU: <strong>10 ms</strong> a photo.</p></div>
+  <div class="use fx up" data-at="5.2" style="left:974px;top:150px"><small>03</small><b>Security cams</b><p>Two retired phones, recording 24/7. About <strong>3 weeks</strong> kept.</p></div>
+  <div class="use fx up" data-at="7.2" style="left:1386px;top:150px"><small>04</small><b>64× playback</b><p>Scrub a whole day of footage from my phone.</p></div>
+  <div class="use fx up" data-at="9.8" style="left:150px;top:412px"><small>05</small><b>PC backup</b><p><strong>632 GB</strong>, every night at 2 AM. A normal night takes 95 seconds.</p></div>
+  <div class="use fx up" data-at="11.0" style="left:562px;top:412px"><small>06</small><b>Time machine</b><p>Snapshots around the clock. Any folder, as it was, back <strong>6 months</strong>.</p></div>
+  <div class="use fx up" data-at="12.2" style="left:974px;top:412px"><small>07</small><b>Private chat</b><p><strong>10+</strong> local models with web search. It can read its own temps.</p></div>
+  <div class="use fx up" data-at="13.2" style="left:1386px;top:412px"><small>08</small><b>Heartbeat</b><p>A small model on the CPU writes a health check every <strong>5 min</strong>.</p></div>
+  <div class="use fx up" data-at="14.0" style="left:150px;top:674px"><small>09</small><b>Print server</b><p>Hosts the Ender. Claude sends a part straight to the bed.</p></div>
+  <div class="use fx up" data-at="14.6" style="left:562px;top:674px"><small>10</small><b>Model bake-offs</b><p><strong>6</strong> models, local vs cloud, one prompt: build a 3D snake game.</p></div>
+  <div class="use fx up" data-at="15.2" style="left:974px;top:674px"><small>11</small><b>Stress lab</b><p>One-tap GPU burn with a watchdog that pulls power on heat.</p></div>
+  <div class="use fx up" data-at="15.8" style="left:1386px;top:674px"><small>12</small><b>From anywhere</b><p>All of it over Tailscale. No open ports.</p></div>
+  <p class="vo" data-at="0.4">And it's not a toy. It backs up my photos the second I take them. It records my security cams, which are just old phones.</p>
+  <p class="vo" data-at="9.8">It backs up my PC every night. And it runs a private chatbot that can read its own temperatures.</p>
+</section>
+
+<section class="scene" id="s-app" data-dur="7.5" data-act="THE POINT" data-mx="2.4">
+  <div class="bench"></div>
+  <div class="stamp">; act 05 · <b>NAS Home · my own app</b></div><div class="date">WINDOWS + ANDROID</div>
+  <div class="phone fx up" data-at="0.3" style="left:140px;top:150px;width:390px;height:770px"><img src="img/app_pc3d.jpg" alt="App: 3D model of the PC"></div>
+  <div class="phone fx up" data-at="1.2" style="left:570px;top:190px;width:390px;height:770px"><img src="img/app_duct.jpg" alt="App: twin duct selected, air temperature into each GPU"></div>
+  <div class="phone fx up" data-at="2.1" style="left:1000px;top:150px;width:390px;height:770px"><img src="img/app_chat.jpg" alt="App: chat with a local model reading live temperatures"></div>
+  <div class="shot fx up" data-at="3.0" style="left:1430px;top:190px;width:380px;height:572px"><img src="img/app_models.jpg" alt="Model picker listing local models and their speeds"></div>
+  <p class="vo" data-at="0.4">One app I built shows all of it, from anywhere. Even a live 3D model of the PC.</p>
+</section>
+
+<section class="scene" id="s-next" data-dur="11.5" data-act="THE POINT" data-mx="1.6">
+  <div class="bench"></div>
+  <div class="stamp">; act 05 · <b>what's next</b></div>
+  <div class="nx" style="top:150px">
+    <div class="fx up" data-at="1.3">A coding agent that runs fully local<em>testing now</em></div>
+    <div class="fx up" data-at="3.6">Motion detection for the cameras<em>planned</em></div>
+    <div class="fx up" data-at="5.2">The new multicolor printer<em>still in the box</em></div>
+    <div class="fx up" data-at="6.4">Round two of the bake-off: a first-person shooter<em>harness built</em></div>
+    <div class="fx up" data-at="7.0">An off-site copy of the photos<em>next backup job</em></div>
+    <div class="fx up" data-at="7.6">Games on a datacenter GPU, because why not<em>Steam's installed</em></div>
+    <div class="fx up maybe" data-at="8.4">A third V100<em>&ldquo;I'm not gonna do it unless I need&rdquo;</em></div>
+  </div>
+  <p class="vo" data-at="0.4">What's next? A coding agent that runs fully local. Motion detection for the cams. The new printer's still in its box.</p>
+  <p class="vo" data-at="8.4">And maybe a third V100. I said maybe.</p>
+</section>
+
+<section class="scene" id="s-outro" data-dur="10" data-act="THE POINT" data-mx="3">
+  <div class="wall"><img class="fx zoom" data-at="0.15" src="img/t_box.jpg" alt=""><img class="fx zoom" data-at="0.23" src="img/t_v100in.jpg" alt=""><img class="fx zoom" data-at="0.32" src="img/t_v100edge.jpg" alt=""><img class="fx zoom" data-at="0.41" src="img/t_printing.jpg" alt=""><img class="fx zoom" data-at="0.49" src="img/t_hub_two.jpg" alt=""><img class="fx zoom" data-at="0.58" src="img/t_ring.jpg" alt=""><img class="fx zoom" data-at="0.66" src="img/t_straightener_hand.jpg" alt=""><img class="fx zoom" data-at="0.75" src="img/t_fanframe.jpg" alt=""><img class="fx zoom" data-at="0.83" src="img/t_petg.jpg" alt=""><img class="fx zoom" data-at="0.92" src="img/t_v1case.jpg" alt=""><img class="fx zoom" data-at="1.00" src="img/t_v1front.jpg" alt=""><img class="fx zoom" data-at="1.08" src="img/t_v1side.jpg" alt=""><img class="fx zoom" data-at="1.17" src="img/t_note_pegs.jpg" alt=""><img class="fx zoom" data-at="1.25" src="img/t_note_leak.jpg" alt=""><img class="fx zoom" data-at="1.34" src="img/t_tape2.jpg" alt=""><img class="fx zoom" data-at="1.43" src="img/t_fit_c.jpg" alt=""><img class="fx zoom" data-at="1.51" src="img/t_pins.jpg" alt=""><img class="fx zoom" data-at="1.59" src="img/t_stack_side.jpg" alt=""><img class="fx zoom" data-at="1.68" src="img/t_stack_front.jpg" alt=""><img class="fx zoom" data-at="1.77" src="img/t_white_hand.jpg" alt=""><img class="fx zoom" data-at="1.85" src="img/t_desk1.jpg" alt=""><img class="fx zoom" data-at="1.94" src="img/t_twin_detail.jpg" alt=""><img class="fx zoom" data-at="2.02" src="img/t_sag1.jpg" alt=""><img class="fx zoom" data-at="2.10" src="img/t_adapter_front.jpg" alt=""><img class="fx zoom" data-at="2.19" src="img/t_adapter_side.jpg" alt=""><img class="fx zoom" data-at="2.27" src="img/t_adapter_frame.jpg" alt=""><img class="fx zoom" data-at="2.36" src="img/t_pastes.jpg" alt=""><img class="fx zoom" data-at="2.45" src="img/t_die.jpg" alt=""><img class="fx zoom" data-at="2.53" src="img/t_card2_old.jpg" alt=""><img class="fx zoom" data-at="2.62" src="img/t_card2_new.jpg" alt=""><img class="fx zoom" data-at="2.70" src="img/t_final_duct2.jpg" alt=""><img class="fx zoom" data-at="2.79" src="img/t_rgb2.jpg" alt=""><img class="fx zoom" data-at="2.87" src="img/t_behub.jpg" alt=""><img class="fx zoom" data-at="2.96" src="img/t_hubtangle.jpg" alt=""><img class="fx zoom" data-at="3.04" src="img/t_v100pcb.jpg" alt=""><img class="fx zoom" data-at="3.12" src="img/t_tesla.jpg" alt=""></div>
+  <div class="scrim heavy fx" data-at="3.4"></div>
+  <h2 class="h-l abs fx up" data-at="3.6" style="left:150px;top:210px;width:1500px">Not bad for the first thing I saw on OfferUp.</h2>
+  <div class="credits fx up" data-at="6.2" style="top:660px">
+    <div><b>$200 PC · 2 V100s</b>11 duct versions<br>one very nasty box</div>
+    <div><b>Designed in chat with Claude</b>printed on an Ender 3 V2</div>
+    <div><b>Every photo</b>taken on the bench<br>Oct 25 – Nov 22, 2026</div>
+  </div>
+  <p class="vo" data-at="3.8">Not bad for the first thing I saw on OfferUp.</p>
+</section>
+
+   <!-- poster: the still frame before Play -->
+   <div class="poster">
+     <div class="bg"><img src="img/final_cards.jpg" alt=""></div>
+     <div class="kicker">A homelab story · under 6 minutes</div>
+     <h1>NAS-T-BOX</h1>
+     <div class="row">
+       <p class="lede">A $200 OfferUp rescue, two datacenter GPUs, and eleven versions of one 3D-printed duct.</p>
+       <button class="play" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 1.5v13l11-6.5z"/></svg>Play<small>SOUND ON</small></button>
+     </div>
+   </div>
+  </div>
+  <div class="cap" aria-hidden="true"></div>
+ </div>
+
+ <div class="deck">
+  <button class="btn" id="b-play" type="button" aria-label="Play"></button>
+  <span class="lcd"><b id="lcd-t">0:00</b></span>
+  <div class="bar" role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="track"><div class="fill"></div></div></div>
+  <span class="lcd"><span class="long">LAYER </span><b id="lcd-l">00</b></span>
+  <button class="btn" id="b-snd" type="button" aria-pressed="true" title="Music (M)">♪</button>
+  <button class="btn" id="b-cap" type="button" aria-pressed="true" title="Captions (C)">CC</button>
+  <button class="btn" id="b-vo" type="button" aria-pressed="false" title="Read the narration aloud with the browser's voice">VOICE</button>
+  <button class="btn" id="b-fs" type="button" aria-label="Fullscreen" title="Fullscreen (F)">⛶</button>
+ </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script>
+/* Live exploded view of duct v11, built from the real print model (model/duct_v11.glb, millimetres). */
+window.SceneHooks=window.SceneHooks||{};
+(function(){
+var st={init:false,ok:false,parts:{},labels:[]},el,R,scene,cam,air,airN=520,airSeed=[],rotors=[],ghosts=[];
+function fail(){st.failed=true;if(el)el.classList.add('no3d')}
+function ease(k){k=Math.max(0,Math.min(1,k));return k<.5?4*k*k*k:1-Math.pow(-2*k+2,3)/2}
+function mat(c,o){o=o||{};return new THREE.MeshStandardMaterial({color:c,roughness:o.r===undefined?.72:o.r,metalness:o.m||0,transparent:true,opacity:1,side:THREE.DoubleSide})}
+function fan(x0){
+  var g=new THREE.Group(),sh=new THREE.Shape(),s=60,r=9;
+  sh.moveTo(-s+r,-s);sh.lineTo(s-r,-s);sh.quadraticCurveTo(s,-s,s,-s+r);sh.lineTo(s,s-r);sh.quadraticCurveTo(s,s,s-r,s);sh.lineTo(-s+r,s);sh.quadraticCurveTo(-s,s,-s,s-r);sh.lineTo(-s,-s+r);sh.quadraticCurveTo(-s,-s,-s+r,-s);
+  var h=new THREE.Path();h.absarc(0,0,56.5,0,Math.PI*2,true);sh.holes.push(h);
+  g.add(new THREE.Mesh(new THREE.ExtrudeGeometry(sh,{depth:25,bevelEnabled:false,curveSegments:40}),mat(0x1c1c20,{r:.5})));
+  var rot=new THREE.Group();rot.position.z=12.5;
+  var hub=new THREE.Mesh(new THREE.CylinderGeometry(20,20,15,32),mat(0x121214,{r:.4}));hub.rotation.x=Math.PI/2;rot.add(hub);
+  for(var k=0;k<7;k++){var b=new THREE.Mesh(new THREE.BoxGeometry(36,22,1.8),mat(0x232328,{r:.5})),a=k/7*Math.PI*2,p=new THREE.Group();
+    b.position.x=37;b.rotation.x=.62;p.rotation.z=a;p.add(b);rot.add(p)}
+  g.add(rot);rotors.push(rot);g.rotation.y=Math.PI/2;g.position.set(x0,-27.5,0);return g;
+}
+function card(yc){
+  var g=new THREE.Group(),body=new THREE.Mesh(new THREE.BoxGeometry(262,36,108),mat(0x131316,{r:.45,m:.3}));g.add(body);
+  var stripe=new THREE.Mesh(new THREE.BoxGeometry(150,36.6,30),mat(0xcdb67e,{r:.35,m:.55}));stripe.position.set(-10,0,39.5);g.add(stripe);
+  g.position.set(-166-131,yc,0);return g;
+}
+function build(){
+  if(st.init)return;st.init=true;
+  if(!window.THREE||!THREE.GLTFLoader||!window.fetch){fail();return}
+  try{
+    R=new THREE.WebGLRenderer({canvas:el.querySelector('canvas'),antialias:true,alpha:true});R.setPixelRatio(1);R.setSize(1920,1080,false);
+    if(THREE.sRGBEncoding)R.outputEncoding=THREE.sRGBEncoding;
+    scene=new THREE.Scene();cam=new THREE.PerspectiveCamera(27,16/9,10,6000);
+    scene.add(new THREE.HemisphereLight(0xfff4e0,0x1a1612,.62));
+    var key=new THREE.DirectionalLight(0xffffff,1.1);key.position.set(300,500,600);scene.add(key);
+    var rim=new THREE.DirectionalLight(0xe0c98a,.9);rim.position.set(-600,200,-400);scene.add(rim);
+    var cool=new THREE.PointLight(0x62cbe2,.9,900);cool.position.set(160,-20,120);scene.add(cool);
+  }catch(e){fail();return}
+  fetch('model/duct_v11.glb').then(function(r){if(!r.ok)throw 0;return r.arrayBuffer()}).then(function(buf){
+    new THREE.GLTFLoader().parse(buf,'',function(g){
+      /* as built: black duct and adapter, white straightener, rails and pins */
+      var colors={adapter:[0x242428,.6],duct:[0x2b2b30,.78],rail_frame:[0xe9e4d8,.6],straightener:[0xe9e4d8,.6],pin:[0xe9e4d8,.6],screw:[0xaab0b6,.3,.85],eps_cable:[0x3a3a40,.6],plug:[0x101012,.5]};
+      var groups={};
+      g.scene.traverse(function(o){if(!o.isMesh)return;var n=(o.name||(o.parent&&o.parent.name)||'').replace(/_g$/,'');var key=Object.keys(colors).filter(function(k){return n.indexOf(k)===0})[0]||'duct';
+        var c=colors[key];o.geometry.computeVertexNormals();o.material=mat(c[0],{r:c[1],m:c[2]||0});(groups[key]=groups[key]||[]).push(o)});
+      scene.add(g.scene);
+      var fa=fan(-33),fb=fan(-78),c1=card(-3.5),c2=card(-64.5);scene.add(fa,fb,c1,c2);
+      /* explode offsets (mm): everything slides toward the case front (+x); screws lift out */
+      st.parts={duct:{o:groups.duct,d:[0,0,0]},rail_frame:{o:groups.rail_frame,d:[55,0,0]},fanB:{o:[fb],d:[120,0,0]},pin:{o:groups.pin,d:[165,0,0]},
+        straightener:{o:groups.straightener,d:[225,0,0]},fanA:{o:[fa],d:[300,0,0]},adapter:{o:groups.adapter,d:[375,0,0]},
+        screw:{o:groups.screw,d:[0,0,70]},eps_cable:{o:groups.eps_cable,d:[0,0,0]},plug:{o:groups.plug,d:[0,0,0]},cards:{o:[c1,c2],d:[-70,0,0]}};
+      Object.keys(st.parts).forEach(function(k){var p=st.parts[k];p.o=p.o||[];p.base=p.o.map(function(o){return o.position.clone()});
+        var box=new THREE.Box3();p.o.forEach(function(o){box.expandByObject(o)});p.c=box.getCenter(new THREE.Vector3());p.top=box.max.y;p.bot=box.min.y});
+      st.parts.cards.c.x=-166-70;                      /* label the cards near their intake end */
+      ['duct','fanA','fanB','cards','adapter','rail_frame','straightener'].forEach(function(k){st.parts[k].o.forEach(function(o){o.traverse(function(m){if(m.isMesh)ghosts.push(m.material)})})});
+      /* intake air */
+      var pos=new Float32Array(airN*3);for(var i=0;i<airN;i++){var a=Math.random()*Math.PI*2,rr=Math.sqrt(Math.random())*52;airSeed.push([Math.cos(a)*rr,Math.sin(a)*rr,Math.random(),Math.random()<.5?0:1,(Math.random()-.5)*26,(Math.random()-.5)*84])}
+      var bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.BufferAttribute(pos,3));
+      air=new THREE.Points(bg,new THREE.PointsMaterial({color:0x8fe3f5,size:9,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false,depthTest:false}));air.renderOrder=5;scene.add(air);
+      st.labels=Array.prototype.slice.call(el.querySelectorAll('[data-part]'));
+      st.ok=true;el.classList.add('has3d');
+    },fail);
+  })['catch'](fail);
+}
+var v=null;
+function tick(t,dur){
+  if(!st.ok)return;
+  v=v||new THREE.Vector3();
+  var e=1-ease((t-dur*.42)/(dur*.26));               /* 1 = exploded, 0 = assembled */
+  var intro=ease(t/2.2);
+  Object.keys(st.parts).forEach(function(k){var p=st.parts[k];p.o.forEach(function(o,i){o.position.set(p.base[i].x+p.d[0]*e,p.base[i].y+p.d[1]*e,p.base[i].z+p.d[2]*e)})});
+  rotors.forEach(function(r){r.rotation.z=-t*(5+(1-e)*9)});
+  var ang=-.62+.5*(t/dur)+(1-e)*.18,dist=1010+290*e,cx=-170+110*e;
+  cam.position.set(cx+Math.sin(ang)*dist,150+60*e,Math.cos(ang)*dist);cam.lookAt(cx,-30,0);
+  var a=ease((t-dur*.7)/1.5),gh=1-.62*a;             /* shell turns to glass while the air runs */
+  for(var q=0;q<ghosts.length;q++){ghosts[q].opacity=gh;ghosts[q].depthWrite=gh>.98}
+  if(air){air.material.opacity=a*.95;var P=air.geometry.attributes.position.array,L=600;
+    for(var i=0;i<airN;i++){var s=airSeed[i],x=110-((t*190+s[2]*L)%L),k=Math.max(0,Math.min(1,(-83-x)/83)),yc=s[3]?-64.5:-3.5;
+      var y0=-27.5+s[1],z0=s[0],y1=yc+s[4]*.9,z1=s[5]*.5,m=x>-83?0:ease(k);
+      P[i*3]=x;P[i*3+1]=y0+(y1-y0)*m;P[i*3+2]=z0+(z1-z0)*m}
+    air.geometry.attributes.position.needsUpdate=true}
+  R.render(scene,cam);
+  st.labels.forEach(function(L){var p=st.parts[L.dataset.part];if(!p)return;var below=L.classList.contains('below');
+    v.set(p.c.x+p.d[0]*e,(below?p.bot-10:p.top+10)+p.d[1]*e,p.c.z+p.d[2]*e).project(cam);
+    L.style.left=((v.x*.5+.5)*1920)+'px';L.style.top=((-v.y*.5+.5)*1080)+'px';L.style.opacity=(intro*Math.max(0,(e-.55)/.45)).toFixed(3)});
+}
+window.SceneHooks['s-explode']={enter:function(node){el=node;build()},tick:tick};
+})();
+
+</script>
+<script>
+(function(){
+'use strict';
+var $=function(s,r){return (r||document).querySelector(s)}, $$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+var root=$('.player'), frame=$('.frame'), stage=$('.stage'), capEl=$('.cap'), poster=$('.poster');
+var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- fit the 1920x1080 frame ---------- */
+function fit(){var r=frame.getBoundingClientRect();if(!r.width||!r.height)return;stage.style.setProperty('--s',Math.min(r.width/1920,r.height/1080));if(window.__ticks)window.__ticks()}
+window.addEventListener('resize',fit);fit();
+if(window.ResizeObserver){try{new ResizeObserver(fit).observe(frame)}catch(_){}}
+
+/* ---------- scene table ---------- */
+var scenes=$$('.scene').map(function(el,i){
+  return {el:el,i:i,dur:parseFloat(el.dataset.dur||'8'),act:el.dataset.act||'',mx:el.dataset.mx,
+    items:$$('[data-at]',el).filter(function(e){return !e.classList.contains('vo')}).map(function(e){
+      return {e:e,at:parseFloat(e.dataset.at),off:e.dataset.off?parseFloat(e.dataset.off):1e9,on:null,count:e.dataset.count,gone:e.dataset.gone?parseFloat(e.dataset.gone):1e9}}),
+    caps:$$('.vo',el).map(function(e){return {at:parseFloat(e.dataset.at||'0'),text:e.textContent.trim()}}).sort(function(a,b){return a.at-b.at}),
+    hooks:window.SceneHooks&&window.SceneHooks[el.id]};
+});
+var starts=[],total=0;scenes.forEach(function(s){starts.push(total);total+=s.dur});
+var T=0,playing=false,cur=-1,capIdx=-2,last=0,started=false;
+
+/* ---------- transport UI ---------- */
+var bar=$('.bar'),fill=$('.bar .fill'),lcdT=$('#lcd-t'),lcdL=$('#lcd-l'),btnPlay=$('#b-play'),btnSnd=$('#b-snd'),btnCap=$('#b-cap'),btnVo=$('#b-vo'),btnFs=$('#b-fs');
+(function ticks(){var seen={},els=[];scenes.forEach(function(s,i){if(s.act&&!seen[s.act]){seen[s.act]=1;var t=document.createElement('div');t.className='tick';t.style.left=(starts[i]/total*100)+'%';var sp=document.createElement('span');sp.textContent=s.act;t.appendChild(sp);bar.appendChild(t);els.push(sp)}});
+  /* hide an act label when the next act starts before it ends */
+  window.__ticks=function(){els.forEach(function(sp,i){sp.style.visibility='visible';var n=els[i+1];if(n&&sp.getBoundingClientRect().right+6>n.getBoundingClientRect().left)sp.style.visibility='hidden'})};
+  setTimeout(window.__ticks,400)})();
+function fmt(t){t=Math.max(0,Math.floor(t));return Math.floor(t/60)+':'+('0'+(t%60)).slice(-2)}
+function icon(p){return p?'<svg viewBox="0 0 16 16"><path d="M3 2h4v12H3zM9 2h4v12H9z"/></svg>':'<svg viewBox="0 0 16 16"><path d="M3 1.5v13l11-6.5z"/></svg>'}
+
+/* ---------- number roll-ups ---------- */
+function roll(it,now){var e=it.e,to=parseFloat(it.count),dec=(it.count.split('.')[1]||'').length,d=parseFloat(e.dataset.roll||'1.2');
+  var k=Math.min(1,Math.max(0,(now-it.at)/d));k=1-Math.pow(1-k,3);var v=(parseFloat(e.dataset.from||'0')+(to-parseFloat(e.dataset.from||'0'))*k);
+  var s=v.toFixed(dec);if(e.dataset.comma)s=s.replace(/\B(?=(\d{3})+(?!\d))/g,',');e.textContent=(e.dataset.pre||'')+s+(e.dataset.post||'')}
+
+/* ---------- render one moment ---------- */
+function show(i,t,hard){
+  if(i!==cur){
+    if(cur>=0){scenes[cur].el.classList.remove('active');if(scenes[cur].hooks&&scenes[cur].hooks.leave)scenes[cur].hooks.leave()}
+    var s=scenes[i];s.el.classList.toggle('cut',!!hard);s.el.classList.add('active');
+    s.items.forEach(function(it){it.on=null});cur=i;capIdx=-2;
+    if(s.hooks&&s.hooks.enter)s.hooks.enter(s.el);
+    lcdL.textContent=('0'+(i+1)).slice(-2)+'/'+scenes.length;
+    Score.level(s.mx===undefined?1:parseFloat(s.mx));
+  }
+  var sc=scenes[i];
+  for(var k=0;k<sc.items.length;k++){var it=sc.items[k],on=t>=it.at&&t<it.off;
+    if(on!==it.on){it.on=on;it.e.classList.toggle('on',on)}
+    if(it.gone<1e9)it.e.classList.toggle('gone',t>=it.gone);
+    if(it.count&&on)roll(it,t)}
+  var ci=-1;for(var c=0;c<sc.caps.length;c++){if(t>=sc.caps[c].at)ci=c}
+  if(ci!==capIdx){capIdx=ci;var txt=ci>=0?sc.caps[ci].text:'';
+    if(txt){capEl.innerHTML='<span></span>';capEl.firstChild.textContent=txt;capEl.classList.add('show');Voice.say(txt)}else{capEl.classList.remove('show')}}
+  if(sc.hooks&&sc.hooks.tick)sc.hooks.tick(t,sc.dur);
+  fill.style.width=(T/total*100)+'%';lcdT.textContent=fmt(T)+' / '+fmt(total);
+}
+function locate(){var i=scenes.length-1;for(var k=0;k<scenes.length;k++){if(T<starts[k]+scenes[k].dur){i=k;break}}return i}
+function loop(now){
+  var dt=Math.min(.1,(now-last)/1000);last=now;
+  if(playing){
+    var i=locate(),end=starts[i]+scenes[i].dur;
+    if(T+dt>=end&&Voice.busy()){T=end-.02}else{T+=dt}
+    if(T>=total){T=total-.01;setPlaying(false)}
+    i=locate();show(i,T-starts[i]);
+  }
+  requestAnimationFrame(loop);
+}
+function setPlaying(p){playing=p;root.classList.toggle('paused',!p);btnPlay.innerHTML=icon(p);btnPlay.setAttribute('aria-label',p?'Pause':'Play');
+  if(p){Score.resume()}else{Score.pause();Voice.stop()}}
+function seek(t,hard){T=Math.max(0,Math.min(total-.01,t));Voice.stop();var i=locate();show(i,T-starts[i],hard)}
+function begin(){if(!started){started=true;poster.classList.add('hide');Score.init()}setPlaying(true)}
+window.Movie={seek:function(t){seek(t,true)},goto:function(n,off){seek(starts[n]+(off||0),true)},scenes:scenes,starts:starts,total:function(){return total},play:begin,pause:function(){setPlaying(false)},
+  byId:function(id,off){for(var i=0;i<scenes.length;i++){if(scenes[i].el.id===id){seek(starts[i]+(off||0),true);return i}}return -1}};
+
+$('.play').addEventListener('click',begin);
+btnPlay.addEventListener('click',function(){if(!started){begin()}else{if(T>=total-.05)seek(0,true);setPlaying(!playing)}});
+bar.addEventListener('click',function(e){var r=bar.getBoundingClientRect();if(!started){started=true;poster.classList.add('hide');Score.init();setPlaying(true)}seek((e.clientX-r.left)/r.width*total,true)});
+frame.addEventListener('click',function(e){if(started&&!e.target.closest('button,a'))setPlaying(!playing)});
+function toggle(btn,fn){btn.addEventListener('click',function(){var v=btn.getAttribute('aria-pressed')!=='true';btn.setAttribute('aria-pressed',v);fn(v)})}
+toggle(btnSnd,function(v){Score.mute(!v)});
+toggle(btnCap,function(v){root.classList.toggle('nocap',!v)});
+toggle(btnVo,function(v){Voice.enable(v)});
+btnFs.addEventListener('click',function(){var d=document,el=root;try{if(!d.fullscreenElement){(el.requestFullscreen||el.webkitRequestFullscreen).call(el)['catch'](function(){})}else{d.exitFullscreen()}}catch(_){}});
+document.addEventListener('fullscreenchange',function(){setTimeout(fit,60)});
+document.addEventListener('keydown',function(e){
+  if(e.target.closest&&e.target.closest('input,textarea'))return;
+  if(e.key===' '||e.key==='k'){e.preventDefault();btnPlay.click()}
+  else if(e.key==='ArrowRight'){if(started)seek(starts[Math.min(scenes.length-1,cur+1)],true)}
+  else if(e.key==='ArrowLeft'){if(started){var back=(T-starts[cur]<1.5&&cur>0)?cur-1:cur;seek(starts[back],true)}}
+  else if(e.key==='m'){btnSnd.click()} else if(e.key==='c'){btnCap.click()} else if(e.key==='f'){btnFs.click()}
+});
+document.addEventListener('visibilitychange',function(){if(document.hidden&&playing)setPlaying(false)});
+
+/* ---------- optional read-aloud (browser voice) ---------- */
+var Voice=(function(){var on=false,ok=('speechSynthesis' in window)&&('SpeechSynthesisUtterance' in window),voice=null,speaking=false;
+  function pick(){try{var vs=speechSynthesis.getVoices();voice=vs.filter(function(v){return /en[-_]US/i.test(v.lang)&&/natural|online|google|aria|guy|davis/i.test(v.name)})[0]||vs.filter(function(v){return /^en/i.test(v.lang)})[0]||null}catch(_){}}
+  if(ok){pick();try{speechSynthesis.onvoiceschanged=pick}catch(_){}}else{btnVo.hidden=true}
+  return {enable:function(v){on=v&&ok;if(!on)this.stop()},
+    say:function(t){if(!on||!playing)return;try{speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(t.replace(/\$(\d[\d,]*)/g,'$1 dollars'));if(voice)u.voice=voice;u.rate=1.08;u.pitch=.95;speaking=true;u.onend=u.onerror=function(){speaking=false};speechSynthesis.speak(u)}catch(_){speaking=false}},
+    busy:function(){return on&&speaking},stop:function(){speaking=false;if(ok){try{speechSynthesis.cancel()}catch(_){}}}};
+})();
+
+/* ---------- generated score (no audio files) ---------- */
+var Score=(function(){
+  var ctx=null,master,bus,delay,lp,lvl=1,want=1,muted=false,step=0,next=0,timer=null,noise=null,padVoices=[];
+  var BPM=84,S=60/BPM/4;
+  var CH=[[38,53,57,60,64],[34,53,58,62,65],[41,53,57,60,64],[36,52,55,60,62]]; // Dm9, Bbmaj7, Fmaj7, Cadd9 (bass first)
+  function hz(m){return 440*Math.pow(2,(m-69)/12)}
+  function env(g,t,a,peak,d){g.gain.cancelScheduledValues(t);g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(peak,t+a);g.gain.exponentialRampToValueAtTime(.0001,t+a+d)}
+  function pad(ch,t,len){
+    padVoices.forEach(function(v){try{v.g.gain.cancelScheduledValues(t);v.g.gain.setTargetAtTime(.0001,t,.5);v.o.forEach(function(o){o.stop(t+3)})}catch(_){}});padVoices=[];
+    ch.slice(1).forEach(function(m,i){var g=ctx.createGain();g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(.05,t+1.6);g.connect(lp);
+      var os=[-6,6].map(function(c){var o=ctx.createOscillator();o.type=i%2?'triangle':'sawtooth';o.frequency.value=hz(m);o.detune.value=c+i*2;o.connect(g);o.start(t);return o});padVoices.push({g:g,o:os})});
+  }
+  function pluck(m,t,v){var o=ctx.createOscillator(),g=ctx.createGain();o.type='triangle';o.frequency.value=hz(m);env(g,t,.006,v,.5);o.connect(g);g.connect(bus);g.connect(delay);o.start(t);o.stop(t+.7)}
+  function bass(m,t){var o=ctx.createOscillator(),g=ctx.createGain(),f=ctx.createBiquadFilter();f.type='lowpass';f.frequency.value=220;o.type='sawtooth';o.frequency.value=hz(m);env(g,t,.01,.16,.22);o.connect(f);f.connect(g);g.connect(bus);o.start(t);o.stop(t+.35)}
+  function kick(t){var o=ctx.createOscillator(),g=ctx.createGain();o.frequency.setValueAtTime(118,t);o.frequency.exponentialRampToValueAtTime(42,t+.13);env(g,t,.004,.5,.3);o.connect(g);g.connect(bus);o.start(t);o.stop(t+.4)}
+  function hat(t,v){var s=ctx.createBufferSource(),g=ctx.createGain(),f=ctx.createBiquadFilter();s.buffer=noise;f.type='highpass';f.frequency.value=7500;env(g,t,.002,v,.05);s.connect(f);f.connect(g);g.connect(bus);s.start(t);s.stop(t+.08)}
+  function boom(t){var o=ctx.createOscillator(),g=ctx.createGain();o.frequency.setValueAtTime(70,t);o.frequency.exponentialRampToValueAtTime(30,t+1.2);env(g,t,.02,.5,1.8);o.connect(g);g.connect(bus);o.start(t);o.stop(t+2.2)}
+  function sched(){
+    if(!ctx||ctx.state!=='running')return;
+    while(next<ctx.currentTime+.25){
+      lvl+=(want-lvl)*.2;var L=lvl,bar=Math.floor(step/16),s16=step%16,ch=CH[Math.floor(bar/2)%4],t=next;
+      if(step%32===0){pad(ch,t,32*S);lp.frequency.setTargetAtTime(500+L*450,t,1.5)}
+      if(L>.6&&s16%4===2&&Math.random()<.75)pluck(ch[1+((step>>2)%4)]+12,t,.05+.02*L);
+      if(L>1.5){if(s16===0||s16===8)kick(t);if(s16%4===2)hat(t,.03+.01*L)}
+      if(L>2.3){if(s16%2===0)pluck(ch[1+((s16>>1)*3)%4]+12,t,.05);if(s16%4===0||s16===6||s16===14)bass(ch[0],t)}
+      if(L>3.2&&s16%2===1)hat(t,.02);
+      next+=S;step++;
+    }
+  }
+  return {
+    init:function(){if(ctx)return;try{var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;ctx=new AC();
+        master=ctx.createGain();master.gain.value=muted?0:.55;var comp=ctx.createDynamicsCompressor();bus=ctx.createGain();bus.connect(comp);comp.connect(master);master.connect(ctx.destination);
+        lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=900;lp.Q.value=.6;lp.connect(bus);
+        delay=ctx.createDelay(1);delay.delayTime.value=S*3;var fb=ctx.createGain();fb.gain.value=.34;var dg=ctx.createGain();dg.gain.value=.4;delay.connect(fb);fb.connect(delay);delay.connect(dg);dg.connect(bus);
+        var n=ctx.createBuffer(1,ctx.sampleRate*.2,ctx.sampleRate),d=n.getChannelData(0);for(var i=0;i<d.length;i++)d[i]=Math.random()*2-1;noise=n;
+        next=ctx.currentTime+.1;timer=setInterval(sched,60)}catch(_){ctx=null}},
+    level:function(v){if(v<0){if(ctx&&ctx.state==='running'&&!muted)boom(ctx.currentTime+.05);v=0}want=v},
+    mute:function(m){muted=m;if(ctx)master.gain.setTargetAtTime(m?0:.55,ctx.currentTime,.08)},
+    pause:function(){if(ctx&&ctx.state==='running')ctx.suspend()},
+    resume:function(){if(ctx&&ctx.state==='suspended'){ctx.resume().then(function(){next=Math.max(next,ctx.currentTime+.05)})}}
+  };
+})();
+
+btnPlay.innerHTML=icon(false);
+lcdT.textContent='0:00 / '+fmt(total);lcdL.textContent='00/'+scenes.length;
+var m=/[#&]t=(\d+)/.exec(location.hash||'');
+requestAnimationFrame(function(n){last=n;requestAnimationFrame(loop)});
+/* first frame behind the poster */
+show(0,0,true);
+})();
+
+</script>
